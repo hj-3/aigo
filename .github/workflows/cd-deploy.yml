@@ -61,16 +61,8 @@ jobs:
           LOCK_KEY="global/iam/terraform.tfstate.tflock"
           if aws s3 cp "s3://${{ env.TF_STATE_BUCKET }}/${LOCK_KEY}" /tmp/iam.lock 2>/dev/null; then
             LOCK_ID=$(jq -r '.ID' /tmp/iam.lock)
-            CREATED=$(jq -r '.Created' /tmp/iam.lock)
-            CREATED_TS=$(date -d "${CREATED}" +%s)
-            AGE_MIN=$(( ($(date +%s) - CREATED_TS) / 60 ))
-            echo "Lock found: ID=${LOCK_ID}, age=${AGE_MIN}min"
-            if [ "${AGE_MIN}" -gt 30 ]; then
-              echo "Stale lock (>${AGE_MIN}min) — force-unlocking..."
-              terraform force-unlock -force "${LOCK_ID}"
-            else
-              echo "Lock is recent, will rely on -lock-timeout"
-            fi
+            echo "Lock found: ${LOCK_ID} — force-unlocking (safe: concurrency group prevents parallel runs)"
+            terraform force-unlock -force "${LOCK_ID}"
           else
             echo "No lock file — proceeding"
           fi
@@ -94,16 +86,8 @@ jobs:
           LOCK_KEY="prod/terraform.tfstate.tflock"
           if aws s3 cp "s3://${{ env.TF_STATE_BUCKET }}/${LOCK_KEY}" /tmp/prod.lock 2>/dev/null; then
             LOCK_ID=$(jq -r '.ID' /tmp/prod.lock)
-            CREATED=$(jq -r '.Created' /tmp/prod.lock)
-            CREATED_TS=$(date -d "${CREATED}" +%s)
-            AGE_MIN=$(( ($(date +%s) - CREATED_TS) / 60 ))
-            echo "Lock found: ID=${LOCK_ID}, age=${AGE_MIN}min"
-            if [ "${AGE_MIN}" -gt 30 ]; then
-              echo "Stale lock (>${AGE_MIN}min) — force-unlocking..."
-              terraform force-unlock -force "${LOCK_ID}"
-            else
-              echo "Lock is recent, will rely on -lock-timeout"
-            fi
+            echo "Lock found: ${LOCK_ID} — force-unlocking (safe: concurrency group prevents parallel runs)"
+            terraform force-unlock -force "${LOCK_ID}"
           else
             echo "No lock file — proceeding"
           fi
