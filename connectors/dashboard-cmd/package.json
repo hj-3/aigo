@@ -1,0 +1,26 @@
+{
+  "name": "@aigo/connector-dashboard-cmd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Dashboard command handler Lambda (approve/reject/fix via API Gateway)",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:@aws-sdk/*",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aigo/aws-clients": "workspace:*",
+    "@aigo/logger": "workspace:*",
+    "@aigo/types": "workspace:*",
+    "hono": "^4.6.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.9.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.7.0"
+  }
+}

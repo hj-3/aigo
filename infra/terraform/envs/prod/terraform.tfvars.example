@@ -1,0 +1,11 @@
+# Copy this file to terraform.tfvars and fill in the values.
+# NEVER commit terraform.tfvars — it contains sensitive account info.
+
+aws_region     = "ap-northeast-2"
+project        = "aigo"
+aws_account_id = "123456789012"       # Your AWS account ID
+github_org     = "your-github-org"   # GitHub organization name
+alert_email    = "ops@example.com"
+domain_name    = "aigo.example.com"  # Leave "" to use AWS default domains
+
+enable_nat_gateway = true

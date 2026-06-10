@@ -1,0 +1,81 @@
+name: CI — API & Connectors
+
+on:
+  pull_request:
+    paths:
+      - 'apps/dashboard-api/**'
+      - 'connectors/**'
+      - 'workers/lightweight/**'
+      - 'packages/**'
+      - '.github/workflows/ci-api.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/dashboard-api/**'
+      - 'connectors/**'
+      - 'workers/lightweight/**'
+      - 'packages/**'
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: TypeCheck + Test + Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Cache pnpm
+        uses: actions/cache@v4
+        with:
+          path: $(pnpm store path --silent)
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check all packages
+        run: pnpm -r --filter="{packages/**}" type-check
+
+      - name: Type check connectors
+        run: |
+          pnpm -F "@aigo/connector-github" type-check
+          pnpm -F "@aigo/connector-slack" type-check
+          pnpm -F "@aigo/connector-aws-event" type-check
+          pnpm -F "@aigo/connector-dashboard-cmd" type-check
+
+      - name: Type check workers
+        run: pnpm -F "@aigo/worker-lightweight" type-check
+
+      - name: Type check dashboard-api
+        run: pnpm -F "@aigo/dashboard-api" type-check
+
+      - name: Lint all
+        run: |
+          pnpm -F "@aigo/connector-github" lint
+          pnpm -F "@aigo/connector-slack" lint
+          pnpm -F "@aigo/worker-lightweight" lint
+          pnpm -F "@aigo/dashboard-api" lint
+
+      - name: Test (connector-github)
+        run: pnpm -F "@aigo/connector-github" test
+
+      - name: Bundle connectors (verify no bundling errors)
+        run: |
+          pnpm -F "@aigo/connector-github" bundle
+          pnpm -F "@aigo/connector-slack" bundle
+          pnpm -F "@aigo/connector-aws-event" bundle
+          pnpm -F "@aigo/connector-dashboard-cmd" bundle
+          pnpm -F "@aigo/worker-lightweight" bundle
+          pnpm -F "@aigo/dashboard-api" bundle

@@ -1,0 +1,29 @@
+{
+  "name": "@aigo/logger",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Structured logger for AgentOps Platform Lambda functions (Powertools-compatible)",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "type-check": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.9.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "typescript": "^5.7.0"
+  },
+  "peerDependencies": {
+    "@aigo/types": "workspace:*"
+  }
+}

@@ -1,0 +1,91 @@
+name: CI — Agents & Tools
+
+on:
+  pull_request:
+    paths:
+      - 'agents/**'
+      - 'tools/**'
+      - 'libs/**'
+      - 'workers/heavy/**'
+      - '.github/workflows/ci-agents.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'tools/**'
+      - 'libs/**'
+      - 'workers/heavy/**'
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-type-check:
+    name: Ruff + Pyright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.0"
+
+      - name: Install dependencies
+        run: uv sync --all-packages
+
+      - name: Run Ruff lint
+        run: uv run ruff check agents/ tools/ libs/ workers/heavy/
+
+      - name: Run Ruff format check
+        run: uv run ruff format --check agents/ tools/ libs/ workers/heavy/
+
+      - name: Run Pyright type checking
+        run: uv run pyright agents/ tools/ libs/ workers/heavy/
+
+  test:
+    name: Pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Run tests
+        run: uv run pytest libs/ tools/ workers/heavy/ -v --tb=short
+        env:
+          AWS_DEFAULT_REGION: ap-northeast-2
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+
+  docker-build:
+    name: Build Heavy Worker Docker Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build heavy worker image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: workers/heavy
+          push: false
+          tags: aigo/worker-heavy:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

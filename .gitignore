@@ -1,0 +1,112 @@
+# ──────────────────────────────────────
+# Node / TypeScript
+# ──────────────────────────────────────
+node_modules/
+dist/
+build/
+.cache/
+*.tsbuildinfo
+*.js.map
+coverage/
+.nyc_output/
+
+# ──────────────────────────────────────
+# Python
+# ──────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+.tox/
+*.egg
+MANIFEST
+
+# ──────────────────────────────────────
+# Terraform
+# ──────────────────────────────────────
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+*.auto.tfvars
+!*.tfvars.example
+
+# ──────────────────────────────────────
+# Environment / Secrets
+# ──────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+secrets.json
+credentials.json
+
+# ──────────────────────────────────────
+# AWS
+# ──────────────────────────────────────
+.aws/
+samconfig.toml
+.aws-sam/
+
+# ──────────────────────────────────────
+# IDE / Editor
+# ──────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ──────────────────────────────────────
+# pnpm
+# ──────────────────────────────────────
+.pnpm-store/
+
+# ──────────────────────────────────────
+# uv
+# ──────────────────────────────────────
+.uv/
+
+# ──────────────────────────────────────
+# Misc
+# ──────────────────────────────────────
+*.log
+*.tmp
+*.temp
+*.bak
+*.zip
+*.tar.gz
+lambda.zip
+layer.zip

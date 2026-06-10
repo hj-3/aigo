@@ -1,0 +1,6 @@
+packages:
+  - 'apps/*'
+  - 'connectors/*'
+  - 'workers/lightweight'
+  - 'workers/notification'
+  - 'packages/*'

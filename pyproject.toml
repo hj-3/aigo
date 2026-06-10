@@ -1,0 +1,56 @@
+[tool.uv.workspace]
+members = [
+  "agents/*",
+  "tools/*",
+  "workers/heavy",
+  "libs/*",
+]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.3.0",
+  "pytest-asyncio>=0.24.0",
+  "pytest-mock>=3.14.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+  "E", "W",   # pycodestyle
+  "F",        # pyflakes
+  "I",        # isort
+  "N",        # pep8-naming
+  "UP",       # pyupgrade
+  "S",        # bandit security
+  "B",        # bugbear
+  "A",        # builtins shadowing
+  "C4",       # comprehensions
+  "T20",      # print statements
+  "PT",       # pytest style
+  "RET",      # return statements
+  "SIM",      # simplification
+  "ARG",      # unused arguments
+]
+ignore = [
+  "S101",   # assert in tests
+  "B008",   # function call in default arg (Pydantic validators)
+  "ARG001", # unused function arg (overrides)
+  "ARG002", # unused method arg (overrides)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["common", "aws_utils", "finding_schema"]
+
+[tool.pyright]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+reportMissingImports = true
+reportMissingTypeStubs = false
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "-v --tb=short"

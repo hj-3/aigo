@@ -1,0 +1,61 @@
+name: CI — Dashboard
+
+on:
+  pull_request:
+    paths:
+      - 'apps/dashboard/**'
+      - 'packages/**'
+      - '.github/workflows/ci-dashboard.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/dashboard/**'
+      - 'packages/**'
+
+permissions:
+  contents: read
+
+jobs:
+  type-check-lint-build:
+    name: TypeCheck + Lint + Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check (packages)
+        run: pnpm -F "@aigo/types" type-check && pnpm -F "@aigo/aws-clients" type-check && pnpm -F "@aigo/logger" type-check
+
+      - name: Type check (dashboard)
+        run: pnpm -F "@aigo/dashboard" type-check
+
+      - name: Lint
+        run: pnpm -F "@aigo/dashboard" lint
+
+      - name: Build
+        run: pnpm -F "@aigo/dashboard" build
+        env:
+          VITE_API_URL: /api
