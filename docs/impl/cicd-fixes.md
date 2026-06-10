@@ -592,16 +592,19 @@ AccessDeniedException: not authorized to perform: cloudtrail:DescribeTrails
 ```
 
 **원인**  
-`github_actions_tf_platform` 정책에 `bedrock:*`와 `cloudtrail:*`가 없음.  
-Terraform refresh 단계에서 두 리소스 읽기 실패 → apply 전체 중단.
+`github_actions_tf_platform` 정책에 해당 서비스 wildcard 액션이 없음.  
+Terraform refresh 단계에서 리소스 읽기 실패 → apply 전체 중단.
 
 **수정**  
-`infra/terraform/global/iam/main.tf`의 `github_actions_tf_platform` 정책에 두 SID 추가:
+`infra/terraform/global/iam/main.tf`의 `github_actions_tf_platform` 정책에 SID 추가:
 
 ```hcl
 { Sid = "BedrockFull",    Effect = "Allow", Action = ["bedrock:*"],    Resource = "*" },
 { Sid = "CloudTrailFull", Effect = "Allow", Action = ["cloudtrail:*"], Resource = "*" },
+{ Sid = "SSMFull",        Effect = "Allow", Action = ["ssm:*"],        Resource = "*" },
 ```
+
+(SSMFull은 `ssm:DescribeParameters` 포함 — `github_actions_core`의 `SSMRead`는 `GetParameter`/`GetParameters`만 허용하여 부족)
 
 **흐름**  
 CD step 1 (`global/iam` apply) → 정책 즉시 반영 → step 2 (`envs/prod` apply) 성공.

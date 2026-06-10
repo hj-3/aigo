@@ -490,6 +490,7 @@ resource "aws_iam_policy" "github_actions_tf_platform" {
       { Sid = "AOSSFull",        Effect = "Allow", Action = ["aoss:*"],         Resource = "*" },
       { Sid = "BedrockFull",     Effect = "Allow", Action = ["bedrock:*"],      Resource = "*" },
       { Sid = "CloudTrailFull",  Effect = "Allow", Action = ["cloudtrail:*"],   Resource = "*" },
+      { Sid = "SSMFull",         Effect = "Allow", Action = ["ssm:*"],          Resource = "*" },
     ]
   })
 }
