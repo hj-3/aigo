@@ -72,7 +72,7 @@ export async function ddbQuery<T>(
   results.push(...((result.Items ?? []) as T[]));
   lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
 
-  return { items: results, lastKey };
+  return { items: results, ...(lastKey !== undefined && { lastKey }) };
 }
 
 export async function ddbQueryAll<T>(params: QueryCommandInput): Promise<T[]> {

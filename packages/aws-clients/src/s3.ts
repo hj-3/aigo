@@ -1,3 +1,4 @@
+import type { Readable } from 'stream';
 import {
   S3Client,
   GetObjectCommand,
@@ -71,7 +72,7 @@ export async function s3GetSignedUrl(
 export async function s3UploadLargeObject(
   bucket: string,
   key: string,
-  body: NodeJS.ReadableStream | Buffer,
+  body: Readable | Buffer,
   contentType = 'application/octet-stream',
 ): Promise<void> {
   const upload = new Upload({
