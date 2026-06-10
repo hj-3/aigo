@@ -1,6 +1,6 @@
 from .finding import AgentFinding, FindingCategory, FindingLocation, Severity
-from .report import AgentReport, MergeRecommendation, RiskLevel, AgentSummaries
 from .job import AnalysisInput, FixInput, IncidentInput
+from .report import AgentReport, AgentSummaries, MergeRecommendation, RiskLevel
 
 __all__ = [
     "AgentFinding",

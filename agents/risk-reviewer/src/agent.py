@@ -46,7 +46,7 @@ def build_agent() -> Agent:
         temperature=0.0,
     )
 
-    from tools import pr_tools, ddb_tools, kb_tools, repo_tools  # noqa: PLC0415
+    from tools import ddb_tools, kb_tools, pr_tools, repo_tools  # noqa: PLC0415
 
     return Agent(
         model=model,
@@ -79,6 +79,6 @@ Job Context:
 4. Provide a merge recommendation with detailed risk assessment
 5. Save findings using save_findings
 """
-    result = agent(prompt)
+    agent(prompt)
     log.info("Risk review complete")
     return {"status": "completed", "jobId": job_id}

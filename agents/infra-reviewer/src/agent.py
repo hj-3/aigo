@@ -18,11 +18,14 @@ INFRA_REVIEWER_SYSTEM_PROMPT = """You are the Infrastructure Reviewer Agent for 
 
 Your specialty is reviewing Infrastructure-as-Code (IaC) changes. For each review:
 
-1. **Terraform**: Validate resource configurations, check for missing lifecycle rules, verify naming conventions, detect state drift risks
-2. **Security**: Flag open security groups, missing encryption, public S3 buckets, missing KMS keys, IAM over-permissioning
+1. **Terraform**: Validate resource configurations, check for missing lifecycle rules,
+   verify naming conventions, detect state drift risks
+2. **Security**: Flag open security groups, missing encryption, public S3 buckets,
+   missing KMS keys, IAM over-permissioning
 3. **Cost**: Identify expensive resource configurations, missing auto-scaling, oversized instances
 4. **High Availability**: Check for single points of failure, missing multi-AZ, missing backups
-5. **AWS Well-Architected**: Validate against all 6 pillars (Operational Excellence, Security, Reliability, Performance, Cost, Sustainability)
+5. **AWS Well-Architected**: Validate against all 6 pillars
+   (Operational Excellence, Security, Reliability, Performance, Cost, Sustainability)
 
 For each finding:
 - severity: CRITICAL | HIGH | MEDIUM | LOW | INFO
@@ -46,7 +49,7 @@ def build_agent() -> Agent:
         temperature=0.0,
     )
 
-    from tools import pr_tools, ddb_tools, kb_tools, aws_observability_tools  # noqa: PLC0415
+    from tools import aws_observability_tools, ddb_tools, kb_tools, pr_tools  # noqa: PLC0415
 
     return Agent(
         model=model,
@@ -78,6 +81,6 @@ Job Context:
 3. Use search_infrastructure_standards for AWS Well-Architected guidance
 4. Save all findings using save_findings
 """
-    result = agent(prompt)
+    agent(prompt)
     log.info("Infrastructure review complete")
     return {"status": "completed", "jobId": job_id}

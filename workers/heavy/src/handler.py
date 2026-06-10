@@ -12,9 +12,7 @@ Each invocation handles a single FixRequest end-to-end:
 from __future__ import annotations
 
 import json
-import os
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 import boto3
 import structlog
@@ -32,7 +30,7 @@ logger = structlog.get_logger(__name__)
 
 
 def utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def run() -> None:
@@ -77,7 +75,6 @@ def process_fix_request(message: dict) -> None:
     log = logger.bind(fix_id=fix_id, job_id=job_id, org_id=org_id, repo_id=repo_id)
     log.info("Processing fix request")
 
-    ddb = boto3.client("dynamodb", region_name=config.aws_region)
     ddb_resource = boto3.resource("dynamodb", region_name=config.aws_region)
     s3 = boto3.client("s3", region_name=config.aws_region)
 
@@ -122,7 +119,11 @@ def process_fix_request(message: dict) -> None:
         fix_branch_name = f"aigo/fix-{fix_id[:8].lower()}"
         commit_sha = commit_changes(
             repo_dir,
-            commit_message=f"fix: apply AgentOps automated fix [{fix_id}]\n\nApplied by AgentOps Platform Fix Agent.\nFix request: {fix_id}\nAffected files: {', '.join(result.applied_files)}",
+            commit_message=(
+                f"fix: apply AgentOps automated fix [{fix_id}]\n\n"
+                f"Applied by AgentOps Platform Fix Agent.\n"
+                f"Fix request: {fix_id}\nAffected files: {', '.join(result.applied_files)}"
+            ),
             author_name="AgentOps Bot",
             author_email="agentops-bot@noreply.github.com",
         )
@@ -147,7 +148,11 @@ def process_fix_request(message: dict) -> None:
         now = utcnow()
         fix_table.update_item(
             Key={"PK": f"FIX#{fix_id}", "SK": "METADATA"},
-            UpdateExpression="SET #status = :status, fixPrUrl = :prUrl, fixBranch = :branch, commitSha = :sha, appliedFiles = :files, completedAt = :now, updatedAt = :now, GSI2PK = :gsi2pk",
+            UpdateExpression=(
+                "SET #status = :status, fixPrUrl = :prUrl, fixBranch = :branch,"
+                " commitSha = :sha, appliedFiles = :files,"
+                " completedAt = :now, updatedAt = :now, GSI2PK = :gsi2pk"
+            ),
             ExpressionAttributeNames={"#status": "status"},
             ExpressionAttributeValues={
                 ":status": "COMPLETED",

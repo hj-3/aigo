@@ -61,7 +61,7 @@ def build_agent() -> Agent:
         temperature=0.0,
     )
 
-    from tools import pr_tools, patch_tools, ddb_tools  # noqa: PLC0415
+    from tools import ddb_tools, patch_tools, pr_tools  # noqa: PLC0415
 
     return Agent(
         model=model,
@@ -113,6 +113,6 @@ Instructions:
 
 Remember: ONLY generate patches. Never execute code or modify AWS resources directly.
 """
-    result = agent(prompt)
+    agent(prompt)
     log.info("Fix generation complete", fix_id=fix_id)
     return {"status": "completed", "fixId": fix_id}

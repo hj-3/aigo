@@ -14,12 +14,10 @@ Flow:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any
 
-import boto3
 import structlog
-from strands import Agent, tool
+from strands import Agent
 from strands.models import BedrockModel
 
 from .config import get_config
@@ -53,11 +51,11 @@ def build_agent() -> Agent:
     )
 
     from tools import (  # noqa: PLC0415 — imported at runtime from MCP tool packages
-        subagent_tools,
         ddb_tools,
-        slack_tools,
         github_tools,
         pr_tools,
+        slack_tools,
+        subagent_tools,
     )
 
     return Agent(

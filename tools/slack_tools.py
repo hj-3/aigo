@@ -89,7 +89,7 @@ def notify_analysis_complete(
             f"🟢 {findings_summary.get('LOW', 0)} Low"
         )}},
         {"type": "actions", "elements": [
-            {"type": "button", "text": {"type": "plain_text", "text": "View Report"}, "url": report_url, "style": "primary"},
+            {"type": "button", "text": {"type": "plain_text", "text": "View Report"}, "url": report_url, "style": "primary"},  # noqa: E501
             {"type": "button", "text": {"type": "plain_text", "text": "View PR"}, "url": pr_url},
         ]},
     ]

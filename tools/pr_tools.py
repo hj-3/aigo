@@ -5,6 +5,7 @@ Agents use these to access code without direct GitHub access.
 from __future__ import annotations
 
 import os
+
 import boto3
 import structlog
 from strands import tool

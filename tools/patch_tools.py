@@ -7,6 +7,7 @@ import os
 import re
 import subprocess
 import tempfile
+from datetime import UTC
 from pathlib import Path
 
 import boto3
@@ -46,7 +47,7 @@ def validate_patch_syntax(patch_content: str) -> str:
         with tempfile.TemporaryDirectory() as repo_dir:
             # Init a temp git repo to test patch
             subprocess.run(["git", "init"], cwd=repo_dir, check=True, capture_output=True, timeout=10)
-            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_dir, check=True, capture_output=True)
+            subprocess.run(["git", "config", "user.email", "test@test.com"], cwd=repo_dir, check=True, capture_output=True)  # noqa: E501
             subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_dir, check=True, capture_output=True)
 
             # Create stub files mentioned in the patch
@@ -102,7 +103,7 @@ def save_patch(
     metadata_key = f"patches/{org_id}/{repo_id}/{fix_id}/metadata.json"
 
     import json
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     _s3().put_object(
         Bucket=_patches_bucket(),
@@ -122,7 +123,7 @@ def save_patch(
             "repoId": repo_id,
             "description": patch_description,
             "patchS3Key": s3_key,
-            "createdAt": datetime.now(timezone.utc).isoformat(),
+            "createdAt": datetime.now(UTC).isoformat(),
         }).encode("utf-8"),
         ContentType="application/json",
         ServerSideEncryption="aws:kms",

@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any
+from datetime import UTC, datetime, timedelta
 
 import boto3
 import structlog
@@ -42,7 +41,7 @@ def get_cloudwatch_metrics(
         JSON string with metric data points
     """
     cw = boto3.client("cloudwatch", region_name=_region())
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(minutes=period_minutes)
 
     response = cw.get_metric_statistics(
@@ -90,7 +89,7 @@ def get_cloudwatch_logs(
         JSON string with matching log entries
     """
     logs = boto3.client("logs", region_name=_region())
-    end = int(datetime.now(timezone.utc).timestamp())
+    end = int(datetime.now(UTC).timestamp())
     start = end - (minutes_back * 60)
 
     response = logs.start_query(
@@ -135,7 +134,7 @@ def get_xray_traces(
         JSON string with trace summaries
     """
     xray = boto3.client("xray", region_name=_region())
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(minutes=minutes_back)
 
     response = xray.get_trace_summaries(

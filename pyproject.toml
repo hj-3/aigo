@@ -17,7 +17,7 @@ dev = [
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 120
 
 [tool.ruff.lint]
 select = [
@@ -42,6 +42,12 @@ ignore = [
   "ARG001", # unused function arg (overrides)
   "ARG002", # unused method arg (overrides)
 ]
+
+[tool.ruff.lint.per-file-ignores]
+"tools/patch_tools.py" = ["S603", "S607"]
+"workers/heavy/src/patch_applier.py" = ["S603", "S607"]
+"workers/heavy/src/github_client.py" = ["S603", "S607"]
+"workers/heavy/src/config.py" = ["S108"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["common", "aws_utils", "finding_schema"]

@@ -47,7 +47,7 @@ def build_agent() -> Agent:
         temperature=0.0,
     )
 
-    from tools import pr_tools, ddb_tools, kb_tools  # noqa: PLC0415
+    from tools import ddb_tools, kb_tools, pr_tools  # noqa: PLC0415
 
     return Agent(
         model=model,

@@ -5,6 +5,7 @@ security policies, and infrastructure guidelines.
 from __future__ import annotations
 
 import os
+
 import boto3
 import structlog
 from strands import tool

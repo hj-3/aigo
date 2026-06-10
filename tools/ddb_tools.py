@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -29,7 +29,7 @@ def _table(name: str):
 
 
 def _utcnow() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 @tool
@@ -102,7 +102,6 @@ def save_report(
     Returns:
         The generated report ID
     """
-    import time
     report_id = f"{job_id}-report"
     now = _utcnow()
 

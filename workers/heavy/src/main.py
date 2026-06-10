@@ -1,5 +1,6 @@
 """ECS Fargate task entrypoint."""
 import sys
+
 import structlog
 
 from .handler import run

@@ -50,7 +50,7 @@ def build_agent() -> Agent:
         temperature=0.0,
     )
 
-    from tools import aws_observability_tools, ddb_tools, slack_tools, repo_tools  # noqa: PLC0415
+    from tools import aws_observability_tools, ddb_tools, repo_tools, slack_tools  # noqa: PLC0415
 
     return Agent(
         model=model,
@@ -96,6 +96,6 @@ Full Context:
 6. Update the incident with your findings using update_incident
 7. Send status update to Slack using send_incident_update
 """
-    result = agent(prompt)
+    agent(prompt)
     log.info("Incident investigation complete")
     return {"status": "completed", "incidentId": incident_id}

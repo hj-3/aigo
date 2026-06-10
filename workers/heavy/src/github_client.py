@@ -1,8 +1,6 @@
 import json
-from functools import lru_cache
 
 import boto3
-import httpx
 import structlog
 from github import Github, GithubIntegration
 

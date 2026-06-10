@@ -21,11 +21,6 @@ variable "domain_name" {
   default     = ""
 }
 
-variable "github_org" {
-  description = "GitHub organization name (for OIDC trust policy)"
-  type        = string
-}
-
 variable "alert_email" {
   description = "Email address for CloudWatch alarm notifications"
   type        = string
