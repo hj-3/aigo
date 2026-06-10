@@ -9,7 +9,8 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true,
-    "outDir": "dist"
+    "outDir": "dist",
+    "rootDir": "src"
   },
-  "include": ["src/**/*", "vite.config.ts"]
+  "include": ["src/**/*"]
 }
