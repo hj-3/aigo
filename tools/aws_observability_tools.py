@@ -63,7 +63,12 @@ def get_cloudwatch_metrics(
         "period_minutes": period_minutes,
         "stat": stat,
         "data_points": [
-            {"timestamp": str(p.get("Timestamp", "")), "value": p.get(stat, 0), "unit": p.get("Unit", "")} for p in points
+            {
+                "timestamp": str(p.get("Timestamp", "")),
+                "value": p.get(stat, 0),
+                "unit": p.get("Unit", ""),
+            }
+            for p in points
         ],
     }
     logger.info("Metrics retrieved", namespace=namespace, metric=metric_name, points=len(points))
