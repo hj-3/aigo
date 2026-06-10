@@ -447,15 +447,68 @@ workers/heavy/src/handler.py
 
 ---
 
-## CI 상태 요약
+---
+
+## Section 17: CD 파이프라인 — Terraform 스테이트 락 오류
+
+**날짜**: 2026-06-11  
+**워크플로우**: `cd-deploy.yml` (deploy-infra 잡)
+
+### 오류
+
+```
+Error: Error acquiring the state lock
+Error message: operation error S3: PutObject, https response error StatusCode: 412
+Lock Info:
+  ID:        c4089c83-12d8-aa04-a3ea-0a8ce0425862
+  Path:      aigo-tf-state/prod/terraform.tfstate
+  Operation: OperationTypeApply
+  Who:       runner@runnervm3jyl0
+  Version:   1.10.3
+  Created:   2026-06-10 08:13:36.781474007 +0000 UTC
+```
+
+**원인**: 이전 CD 실행이 중간에 중단되어 S3 조건부 잠금이 해제되지 않음.
+
+### 즉시 조치 (수동)
+
+로컬 또는 Cloud Shell에서 AWS 크레덴셜이 설정된 상태로:
+
+```bash
+cd infra/terraform/envs/prod
+terraform init
+terraform force-unlock c4089c83-12d8-aa04-a3ea-0a8ce0425862
+```
+
+### 재발 방지 — 코드 변경
+
+**1. `cd-deploy.yml` — `-lock-timeout=5m` 추가**
+
+단기 경합(동시 실행, 배포 재시도)에 대비해 락 대기 최대 5분:
+
+```diff
+- run: terraform apply -auto-approve -no-color
++ run: terraform apply -auto-approve -no-color -lock-timeout=5m
+```
+
+**2. `.github/workflows/tf-unlock.yml` 신규 생성**
+
+GitHub Actions UI에서 Lock ID를 입력해 강제 해제하는 수동 트리거 워크플로우:
+
+- `workflow_dispatch` 입력: `lock_id` (필수)
+- OIDC 인증 → `terraform init` → `terraform force-unlock -force <lock_id>`
+- `production` 환경 보호 규칙 적용
+
+---
+
+## CI/CD 상태 요약
 
 | 워크플로우 | 이전 상태 | 현재 상태 |
 |-----------|---------|---------|
 | CI — Infrastructure | FAILING | ✅ PASSING |
-| CI — Agents & Tools | FAILING | ✅ PASSING (예상) |
-| CI — API & Connectors | FAILING | ✅ PASSING (예상) |
-| CI — Dashboard | FAILING | ✅ PASSING (예상) |
-| CD — Deploy | FAILING | ✅ READY |
+| CI — Agents & Tools | FAILING | ✅ PASSING |
+| CI — API & Connectors | FAILING | ✅ PASSING |
+| CI — Dashboard | FAILING | ✅ PASSING |
+| CD — Deploy | FAILING (스테이트 락) | ✅ READY (락 해제 후) |
 
-> **참고**: CD 파이프라인(`cd-deploy.yml`)은 CI가 모두 통과한 이후 별도 확인.  
-> AWS 크레덴셜, Terraform 상태 파일 잠금 등 인프라 의존성은 실 환경에서 검증 필요.
+> **다음 단계**: 수동 `terraform force-unlock` 실행 → CD 재실행 → Phase H (초기 데이터 설정) 진행.
