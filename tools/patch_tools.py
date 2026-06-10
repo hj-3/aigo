@@ -10,6 +10,7 @@ import subprocess
 import tempfile
 from datetime import UTC
 from pathlib import Path
+from typing import Any
 
 import boto3
 import structlog
@@ -18,7 +19,7 @@ from strands import tool
 logger = structlog.get_logger(__name__)
 
 
-def _s3() -> boto3.client:
+def _s3() -> Any:
     return boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
 
 

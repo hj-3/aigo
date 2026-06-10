@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any, cast
 
 import boto3
 import structlog
@@ -14,7 +15,7 @@ from strands import tool
 logger = structlog.get_logger(__name__)
 
 
-def _s3() -> boto3.client:
+def _s3() -> Any:
     return boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
 
 
@@ -100,15 +101,15 @@ def get_recent_deployments(repo_id: str, limit: int = 10) -> str:
         Limit=limit,
     )
 
-    items = response.get("Items", [])
+    items: list[Any] = cast(list[Any], response.get("Items", []))
     deployments = [
         {
             "jobId": item.get("jobId"),
             "type": item.get("type"),
             "status": item.get("status"),
-            "commitSha": item.get("prContext", {}).get("commitSha"),
-            "branch": item.get("prContext", {}).get("headBranch"),
-            "author": item.get("prContext", {}).get("authorLogin"),
+            "commitSha": (item.get("prContext") or {}).get("commitSha"),
+            "branch": (item.get("prContext") or {}).get("headBranch"),
+            "author": (item.get("prContext") or {}).get("authorLogin"),
             "createdAt": item.get("createdAt"),
         }
         for item in items

@@ -6,6 +6,7 @@ security policies, and infrastructure guidelines.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 import boto3
 import structlog
@@ -14,7 +15,7 @@ from strands import tool
 logger = structlog.get_logger(__name__)
 
 
-def _kb_client():
+def _kb_client() -> Any:
     return boto3.client(
         "bedrock-agent-runtime",
         region_name=os.environ.get("AWS_REGION", "ap-northeast-2"),

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+from typing import Any
 
 import boto3
 import httpx
@@ -34,7 +35,7 @@ def _get_installation_token(repo_full_name: str) -> str:
     )
 
 
-def _github_request(method: str, url: str, token: str, **kwargs) -> dict:
+def _github_request(method: str, url: str, token: str, **kwargs: Any) -> dict:
     resp = httpx.request(
         method,
         url,

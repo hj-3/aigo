@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 import boto3
 import structlog
@@ -52,17 +53,17 @@ def get_cloudwatch_metrics(
         StartTime=start,
         EndTime=end,
         Period=max(60, period_minutes * 60 // 20),  # ~20 data points
-        Statistics=[stat],
+        Statistics=cast(Any, [stat]),
     )
 
-    points = sorted(response.get("Datapoints", []), key=lambda x: x["Timestamp"])
+    points = sorted(response.get("Datapoints", []), key=lambda x: x.get("Timestamp"))
     result = {
         "namespace": namespace,
         "metric": metric_name,
         "period_minutes": period_minutes,
         "stat": stat,
         "data_points": [
-            {"timestamp": str(p["Timestamp"]), "value": p.get(stat, 0), "unit": p.get("Unit", "")} for p in points
+            {"timestamp": str(p.get("Timestamp", "")), "value": p.get(stat, 0), "unit": p.get("Unit", "")} for p in points
         ],
     }
     logger.info("Metrics retrieved", namespace=namespace, metric=metric_name, points=len(points))
@@ -103,7 +104,7 @@ def get_cloudwatch_logs(
 
     import time
 
-    result: dict = {"status": "Unknown", "results": []}
+    result: Any = {"status": "Unknown", "results": []}
     for _ in range(30):
         result = logs.get_query_results(queryId=query_id)
         if result["status"] in ("Complete", "Failed", "Cancelled"):
@@ -181,14 +182,14 @@ def get_related_alarms(alarm_name_prefix: str, state: str = "ALARM") -> str:
     cw = boto3.client("cloudwatch", region_name=_region())
     response = cw.describe_alarms(
         AlarmNamePrefix=alarm_name_prefix,
-        StateValue=state,
+        StateValue=cast(Any, state),
         MaxRecords=50,
     )
 
     alarms = [
         {
-            "name": a["AlarmName"],
-            "state": a["StateValue"],
+            "name": a.get("AlarmName", ""),
+            "state": a.get("StateValue", ""),
             "reason": a.get("StateReason", ""),
             "updated": str(a.get("StateUpdatedTimestamp", "")),
             "metric": a.get("MetricName", ""),
@@ -215,7 +216,7 @@ def get_resource_config(resource_type: str, resource_id: str) -> str:
     config_client = boto3.client("config", region_name=_region())
     try:
         response = config_client.get_resource_config_history(
-            resourceType=resource_type,
+            resourceType=cast(Any, resource_type),
             resourceId=resource_id,
             limit=1,
         )

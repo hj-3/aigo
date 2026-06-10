@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from typing import Any, cast
 
 import boto3
 import structlog
@@ -55,10 +56,10 @@ def run() -> None:
             continue
 
         message = messages[0]
-        receipt_handle = message["ReceiptHandle"]
+        receipt_handle = message.get("ReceiptHandle", "")
 
         try:
-            body = json.loads(message["Body"])
+            body = json.loads(message.get("Body", "{}"))
             process_fix_request(body)
             sqs.delete_message(QueueUrl=config.sqs_fix_queue_url, ReceiptHandle=receipt_handle)
         except Exception:
@@ -91,15 +92,15 @@ def process_fix_request(message: dict) -> None:
     if not repo_item:
         raise ValueError(f"Repository not found: {repo_id}")
 
-    repo_full_name: str = repo_item["providerRepoFullName"]
-    default_branch: str = repo_item.get("defaultBranch", "main")
+    repo_full_name: str = cast(str, repo_item["providerRepoFullName"])
+    default_branch: str = cast(str, repo_item.get("defaultBranch", "main"))
 
     # ── 3. Fetch patch content from S3 ────────────────────────────────────────
     patch_s3_key = fix_item.get("patchS3Key")
     if not patch_s3_key:
         raise ValueError(f"No patchS3Key on FixRequest {fix_id}")
 
-    patch_object = s3.get_object(Bucket=config.s3_patches_bucket, Key=patch_s3_key)
+    patch_object = s3.get_object(Bucket=config.s3_patches_bucket, Key=cast(str, patch_s3_key))
     patch_content = patch_object["Body"].read().decode("utf-8")
     log.info("Patch content fetched", key=patch_s3_key, size=len(patch_content))
 
@@ -171,7 +172,7 @@ def process_fix_request(message: dict) -> None:
         cleanup_repo(repo_dir)
 
 
-def _fail_fix_request(fix_table, fix_id: str, error: str, org_id: str) -> None:
+def _fail_fix_request(fix_table: Any, fix_id: str, error: str, org_id: str) -> None:
     now = utcnow()
     fix_table.update_item(
         Key={"PK": f"FIX#{fix_id}", "SK": "METADATA"},

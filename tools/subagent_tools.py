@@ -36,7 +36,7 @@ async def _invoke_agent(agent_id: str, alias_id: str, session_id: str, input_tex
     chunks = []
     for event in response["completion"]:
         if "chunk" in event:
-            chunks.append(event["chunk"]["bytes"].decode("utf-8"))
+            chunks.append(event["chunk"].get("bytes", b"").decode("utf-8"))
 
     return "".join(chunks)
 

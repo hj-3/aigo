@@ -43,7 +43,7 @@ class DynamoTable:
             )
             return True
         except ClientError as e:
-            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            if e.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
                 return False
             raise
 
