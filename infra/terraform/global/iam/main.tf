@@ -442,9 +442,11 @@ resource "aws_iam_policy" "github_actions_tf_compute" {
         Sid    = "EC2VPC"
         Effect = "Allow"
         Action = [
-          "ec2:DescribeVpcs", "ec2:DescribeSubnets", "ec2:DescribeRouteTables",
+          "ec2:DescribeVpcs", "ec2:DescribeVpcAttribute",
+          "ec2:DescribeSubnets", "ec2:DescribeRouteTables",
           "ec2:DescribeInternetGateways", "ec2:DescribeNatGateways",
-          "ec2:DescribeAddresses", "ec2:DescribeSecurityGroups",
+          "ec2:DescribeAddresses", "ec2:DescribeAddressesAttribute",
+          "ec2:DescribeSecurityGroups",
           "ec2:DescribeVpcEndpoints", "ec2:DescribeFlowLogs",
           "ec2:DescribeNetworkAcls", "ec2:DescribeNetworkInterfaces",
           "ec2:DescribeAvailabilityZones", "ec2:DescribeTags",
@@ -738,6 +740,7 @@ resource "aws_iam_policy" "github_actions_tf_data_sec" {
           "s3:GetBucketLocation", "s3:ListBucket", "s3:ListBucketVersions",
           "s3:GetBucketWebsite", "s3:PutBucketWebsite", "s3:DeleteBucketWebsite",
           "s3:GetBucketAcl", "s3:PutBucketAcl",
+          "s3:GetAccelerateConfiguration", "s3:PutAccelerateConfiguration",
         ]
         Resource = "*"
       },
