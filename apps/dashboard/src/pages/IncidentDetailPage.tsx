@@ -20,7 +20,7 @@ interface IncidentDetail {
 }
 
 export function IncidentDetailPage() {
-  const { incidentId } = useParams({ from: '/incidents/$incidentId' });
+  const { incidentId } = useParams({ from: '/protected/incidents/$incidentId' });
 
   const { data: incident, isLoading } = useQuery<IncidentDetail>({
     queryKey: ['incident', incidentId],

@@ -35,7 +35,7 @@ interface ReportDetail {
 }
 
 export function ReportDetailPage() {
-  const { reportId } = useParams({ from: '/reports/$reportId' });
+  const { reportId } = useParams({ from: '/protected/reports/$reportId' });
   const qc = useQueryClient();
 
   const { data: report, isLoading } = useQuery<ReportDetail>({

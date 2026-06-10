@@ -54,7 +54,7 @@ function agentStatusClass(status: string): string {
 }
 
 export function JobDetailPage() {
-  const { jobId } = useParams({ from: '/jobs/$jobId' });
+  const { jobId } = useParams({ from: '/protected/jobs/$jobId' });
 
   const { data: job, isLoading: jobLoading } = useQuery<JobDetail>({
     queryKey: ['job', jobId],

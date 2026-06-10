@@ -31,7 +31,7 @@ async function request<T>(
       'Content-Type': 'application/json',
       ...authHeader,
     },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    ...(body !== undefined && { body: JSON.stringify(body) }),
   });
 
   if (!response.ok) {
