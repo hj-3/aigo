@@ -56,7 +56,7 @@ def get_cloudwatch_metrics(
         Statistics=cast(Any, [stat]),
     )
 
-    points = sorted(response.get("Datapoints", []), key=lambda x: x.get("Timestamp"))
+    points = sorted(response.get("Datapoints", []), key=lambda x: x.get("Timestamp", datetime.min.replace(tzinfo=UTC)))
     result = {
         "namespace": namespace,
         "metric": metric_name,
