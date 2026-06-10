@@ -182,6 +182,9 @@ importers:
       '@aigo/types':
         specifier: workspace:*
         version: link:../../packages/types
+      '@hono/zod-validator':
+        specifier: ^0.4.3
+        version: 0.4.3(hono@4.12.25)(zod@3.25.76)
       hono:
         specifier: ^4.6.0
         version: 4.12.25
