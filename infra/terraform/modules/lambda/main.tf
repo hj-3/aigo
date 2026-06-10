@@ -37,9 +37,9 @@ resource "aws_lambda_function" "this" {
   environment {
     variables = merge(
       {
-        STAGE           = "prod"
-        SERVICE_NAME    = local.fn_name
-        LOG_LEVEL       = "INFO"
+        STAGE                               = "prod"
+        SERVICE_NAME                        = local.fn_name
+        LOG_LEVEL                           = "INFO"
         AWS_NODEJS_CONNECTION_REUSE_ENABLED = "1"
       },
       var.environment_variables

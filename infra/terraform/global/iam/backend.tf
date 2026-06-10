@@ -9,9 +9,9 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "aigo-tf-state"
-    key            = "global/iam/terraform.tfstate"
-    region         = "ap-northeast-2"
+    bucket       = "aigo-tf-state"
+    key          = "global/iam/terraform.tfstate"
+    region       = "ap-northeast-2"
     encrypt      = true
     use_lockfile = true
   }

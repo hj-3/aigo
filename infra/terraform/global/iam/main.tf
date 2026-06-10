@@ -27,7 +27,7 @@ resource "aws_iam_openid_connect_provider" "github" {
   url            = "https://token.actions.githubusercontent.com"
   client_id_list = ["sts.amazonaws.com"]
   thumbprint_list = ["6938fd4d98bab03faadb97b34396831e3780aea1",
-                     "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
+  "1c58a3a8518e8759bf075b76b750d4f2df264fcd"]
 }
 
 resource "aws_iam_role" "github_actions_deploy" {
@@ -76,9 +76,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Resource = "arn:aws:lambda:${var.aws_region}:${var.aws_account_id}:function:${local.p}-*"
       },
       {
-        Sid    = "S3ArtifactsDeploy"
-        Effect = "Allow"
-        Action = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
+        Sid      = "S3ArtifactsDeploy"
+        Effect   = "Allow"
+        Action   = ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"]
         Resource = "arn:aws:s3:::${local.p}-artifacts/*"
       },
       {
@@ -91,9 +91,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         ]
       },
       {
-        Sid    = "CloudFrontInvalidate"
-        Effect = "Allow"
-        Action = ["cloudfront:CreateInvalidation"]
+        Sid      = "CloudFrontInvalidate"
+        Effect   = "Allow"
+        Action   = ["cloudfront:CreateInvalidation"]
         Resource = "*"
       },
       {
@@ -106,9 +106,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         ]
       },
       {
-        Sid    = "TerraformLock"
-        Effect = "Allow"
-        Action = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+        Sid      = "TerraformLock"
+        Effect   = "Allow"
+        Action   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
         Resource = "arn:aws:dynamodb:${var.aws_region}:${var.aws_account_id}:table/${local.p}-tf-lock"
       },
       {
@@ -132,9 +132,9 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
         Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:agent/*"
       },
       {
-        Sid    = "SSMRead"
-        Effect = "Allow"
-        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Sid      = "SSMRead"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter", "ssm:GetParameters"]
         Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/${local.p}/*"
       }
     ]
@@ -295,9 +295,9 @@ resource "aws_iam_role_policy" "lambda_worker" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid      = "SQSConsume"
-        Effect   = "Allow"
-        Action   = [
+        Sid    = "SQSConsume"
+        Effect = "Allow"
+        Action = [
           "sqs:ReceiveMessage", "sqs:DeleteMessage",
           "sqs:GetQueueAttributes", "sqs:ChangeMessageVisibility",
           "sqs:SendMessage"
@@ -355,7 +355,7 @@ resource "aws_iam_role_policy" "lambda_worker" {
 
 # ECS Task Role
 resource "aws_iam_role" "ecs_task" {
-  name               = "${local.p}-ecs-task-role"
+  name = "${local.p}-ecs-task-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -390,7 +390,7 @@ resource "aws_iam_role_policy" "ecs_task" {
 
 # ECS Execution Role
 resource "aws_iam_role" "ecs_execution" {
-  name               = "${local.p}-ecs-execution-role"
+  name = "${local.p}-ecs-execution-role"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

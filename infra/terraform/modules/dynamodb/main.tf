@@ -18,8 +18,8 @@ locals {
 resource "aws_dynamodb_table" "organizations" {
   name         = "${local.p}-Organizations"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -47,8 +47,8 @@ resource "aws_dynamodb_table" "organizations" {
 resource "aws_dynamodb_table" "users" {
   name         = "${local.p}-Users"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -69,8 +69,8 @@ resource "aws_dynamodb_table" "users" {
 
   global_secondary_index {
     name            = "GSI1-orgId-email-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
@@ -91,8 +91,8 @@ resource "aws_dynamodb_table" "users" {
 resource "aws_dynamodb_table" "repositories" {
   name         = "${local.p}-Repositories"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -113,8 +113,8 @@ resource "aws_dynamodb_table" "repositories" {
 
   global_secondary_index {
     name            = "GSI1-orgId-provider-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
@@ -135,8 +135,8 @@ resource "aws_dynamodb_table" "repositories" {
 resource "aws_dynamodb_table" "integrations" {
   name         = "${local.p}-Integrations"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -157,8 +157,8 @@ resource "aws_dynamodb_table" "integrations" {
 
   global_secondary_index {
     name            = "GSI1-orgId-type-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
@@ -178,8 +178,8 @@ resource "aws_dynamodb_table" "integrations" {
 resource "aws_dynamodb_table" "analysis_jobs" {
   name         = "${local.p}-AnalysisJobs"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -208,15 +208,15 @@ resource "aws_dynamodb_table" "analysis_jobs" {
 
   global_secondary_index {
     name            = "GSI1-repoId-createdAt-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-orgStatus-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -236,8 +236,8 @@ resource "aws_dynamodb_table" "analysis_jobs" {
 resource "aws_dynamodb_table" "agent_runs" {
   name         = "${local.p}-AgentRuns"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -258,8 +258,8 @@ resource "aws_dynamodb_table" "agent_runs" {
 
   global_secondary_index {
     name            = "GSI1-jobId-agentType-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
@@ -279,8 +279,8 @@ resource "aws_dynamodb_table" "agent_runs" {
 resource "aws_dynamodb_table" "reports" {
   name         = "${local.p}-Reports"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -317,22 +317,22 @@ resource "aws_dynamodb_table" "reports" {
 
   global_secondary_index {
     name            = "GSI1-jobId-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-repoId-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI3-orgApprovalStatus-createdAt-index"
-    hash_key  = "GSI3PK"
-    range_key = "GSI3SK"
+    hash_key        = "GSI3PK"
+    range_key       = "GSI3SK"
     projection_type = "ALL"
   }
 
@@ -353,8 +353,8 @@ resource "aws_dynamodb_table" "reports" {
 resource "aws_dynamodb_table" "findings" {
   name         = "${local.p}-Findings"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -383,15 +383,15 @@ resource "aws_dynamodb_table" "findings" {
 
   global_secondary_index {
     name            = "GSI1-reportId-severity-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-repoCategory-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -411,8 +411,8 @@ resource "aws_dynamodb_table" "findings" {
 resource "aws_dynamodb_table" "approvals" {
   name         = "${local.p}-Approvals"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -441,15 +441,15 @@ resource "aws_dynamodb_table" "approvals" {
 
   global_secondary_index {
     name            = "GSI1-reportId-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-orgId-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -470,8 +470,8 @@ resource "aws_dynamodb_table" "approvals" {
 resource "aws_dynamodb_table" "fix_requests" {
   name         = "${local.p}-FixRequests"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -500,15 +500,15 @@ resource "aws_dynamodb_table" "fix_requests" {
 
   global_secondary_index {
     name            = "GSI1-reportId-status-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-orgStatus-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -528,8 +528,8 @@ resource "aws_dynamodb_table" "fix_requests" {
 resource "aws_dynamodb_table" "incidents" {
   name         = "${local.p}-Incidents"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -558,15 +558,15 @@ resource "aws_dynamodb_table" "incidents" {
 
   global_secondary_index {
     name            = "GSI1-orgId-createdAt-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-serviceStatus-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -586,8 +586,8 @@ resource "aws_dynamodb_table" "incidents" {
 resource "aws_dynamodb_table" "audit_logs" {
   name         = "${local.p}-AuditLogs"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"
@@ -621,15 +621,15 @@ resource "aws_dynamodb_table" "audit_logs" {
 
   global_secondary_index {
     name            = "GSI1-orgId-createdAt-index"
-    hash_key  = "GSI1PK"
-    range_key = "GSI1SK"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
     projection_type = "ALL"
   }
 
   global_secondary_index {
     name            = "GSI2-actorId-createdAt-index"
-    hash_key  = "GSI2PK"
-    range_key = "GSI2SK"
+    hash_key        = "GSI2PK"
+    range_key       = "GSI2SK"
     projection_type = "ALL"
   }
 
@@ -650,8 +650,8 @@ resource "aws_dynamodb_table" "audit_logs" {
 resource "aws_dynamodb_table" "usage_records" {
   name         = "${local.p}-UsageRecords"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key  = "PK"
-  range_key = "SK"
+  hash_key     = "PK"
+  range_key    = "SK"
 
   attribute {
     name = "PK"

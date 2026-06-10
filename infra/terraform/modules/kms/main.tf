@@ -19,15 +19,15 @@ resource "aws_kms_key" "dynamodb" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
       },
       {
-        Sid    = "Allow DynamoDB Service"
-        Effect = "Allow"
+        Sid       = "Allow DynamoDB Service"
+        Effect    = "Allow"
         Principal = { Service = "dynamodb.amazonaws.com" }
         Action    = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey"]
         Resource  = "*"
@@ -56,15 +56,15 @@ resource "aws_kms_key" "s3" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
       },
       {
-        Sid    = "Allow S3 Service"
-        Effect = "Allow"
+        Sid       = "Allow S3 Service"
+        Effect    = "Allow"
         Principal = { Service = "s3.amazonaws.com" }
         Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
         Resource  = "*"
@@ -92,15 +92,15 @@ resource "aws_kms_key" "sqs" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
       },
       {
-        Sid    = "Allow SQS Service"
-        Effect = "Allow"
+        Sid       = "Allow SQS Service"
+        Effect    = "Allow"
         Principal = { Service = "sqs.amazonaws.com" }
         Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
         Resource  = "*"
@@ -128,8 +128,8 @@ resource "aws_kms_key" "lambda" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
@@ -157,22 +157,22 @@ resource "aws_kms_key" "cloudwatch" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "Enable IAM User Permissions"
-        Effect = "Allow"
+        Sid       = "Enable IAM User Permissions"
+        Effect    = "Allow"
         Principal = { AWS = "arn:aws:iam::${var.aws_account_id}:root" }
         Action    = "kms:*"
         Resource  = "*"
       },
       {
-        Sid    = "Allow CloudWatch Logs"
-        Effect = "Allow"
+        Sid       = "Allow CloudWatch Logs"
+        Effect    = "Allow"
         Principal = { Service = "logs.${var.aws_region}.amazonaws.com" }
         Action    = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
         Resource  = "*"
       },
       {
-        Sid    = "Allow CloudTrail"
-        Effect = "Allow"
+        Sid       = "Allow CloudTrail"
+        Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
         Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
         Resource  = "*"

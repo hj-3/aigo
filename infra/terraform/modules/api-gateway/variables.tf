@@ -14,6 +14,6 @@ variable "cors_allow_origins" {
   default = []
 }
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

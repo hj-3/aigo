@@ -269,17 +269,17 @@ resource "aws_vpc_endpoint" "dynamodb" {
 # ──────────────────────────────────────────────────────────────────────────────
 locals {
   interface_endpoints = {
-    ecr_api    = "com.amazonaws.${var.region}.ecr.api"
-    ecr_dkr    = "com.amazonaws.${var.region}.ecr.dkr"
-    logs       = "com.amazonaws.${var.region}.logs"
+    ecr_api        = "com.amazonaws.${var.region}.ecr.api"
+    ecr_dkr        = "com.amazonaws.${var.region}.ecr.dkr"
+    logs           = "com.amazonaws.${var.region}.logs"
     secretsmanager = "com.amazonaws.${var.region}.secretsmanager"
-    kms        = "com.amazonaws.${var.region}.kms"
-    sts        = "com.amazonaws.${var.region}.sts"
-    sqs        = "com.amazonaws.${var.region}.sqs"
-    events     = "com.amazonaws.${var.region}.events"
-    ssm        = "com.amazonaws.${var.region}.ssm"
-    xray       = "com.amazonaws.${var.region}.xray"
-    bedrock    = "com.amazonaws.${var.region}.bedrock-runtime"
+    kms            = "com.amazonaws.${var.region}.kms"
+    sts            = "com.amazonaws.${var.region}.sts"
+    sqs            = "com.amazonaws.${var.region}.sqs"
+    events         = "com.amazonaws.${var.region}.events"
+    ssm            = "com.amazonaws.${var.region}.ssm"
+    xray           = "com.amazonaws.${var.region}.xray"
+    bedrock        = "com.amazonaws.${var.region}.bedrock-runtime"
   }
 }
 

@@ -159,21 +159,21 @@ resource "aws_s3_bucket_policy" "cloudtrail" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AWSCloudTrailAclCheck"
-        Effect = "Allow"
+        Sid       = "AWSCloudTrailAclCheck"
+        Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
-        Action   = "s3:GetBucketAcl"
-        Resource = "arn:aws:s3:::${var.s3_audit_bucket_name}"
+        Action    = "s3:GetBucketAcl"
+        Resource  = "arn:aws:s3:::${var.s3_audit_bucket_name}"
         Condition = {
           StringEquals = { "AWS:SourceArn" = "arn:aws:cloudtrail:${var.aws_region}:${var.aws_account_id}:trail/${local.p}-trail" }
         }
       },
       {
-        Sid    = "AWSCloudTrailWrite"
-        Effect = "Allow"
+        Sid       = "AWSCloudTrailWrite"
+        Effect    = "Allow"
         Principal = { Service = "cloudtrail.amazonaws.com" }
-        Action   = "s3:PutObject"
-        Resource = "arn:aws:s3:::${var.s3_audit_bucket_name}/cloudtrail/AWSLogs/${var.aws_account_id}/*"
+        Action    = "s3:PutObject"
+        Resource  = "arn:aws:s3:::${var.s3_audit_bucket_name}/cloudtrail/AWSLogs/${var.aws_account_id}/*"
         Condition = {
           StringEquals = {
             "s3:x-amz-acl"  = "bucket-owner-full-control"

@@ -7,16 +7,16 @@ locals {
   })
 
   buckets = {
-    frontend      = { versioning = true,  lifecycle_days = 0   }
-    artifacts     = { versioning = true,  lifecycle_days = 90  }
-    diffs         = { versioning = false, lifecycle_days = 30  }
-    reports       = { versioning = true,  lifecycle_days = 365 }
-    agent_outputs = { versioning = false, lifecycle_days = 30  }
-    patches       = { versioning = true,  lifecycle_days = 90  }
-    incidents     = { versioning = true,  lifecycle_days = 365 }
-    kb             = { versioning = true,  lifecycle_days = 0   }
-    agent_packages = { versioning = true,  lifecycle_days = 180 }
-    logs           = { versioning = true,  lifecycle_days = 90  }
+    frontend       = { versioning = true, lifecycle_days = 0 }
+    artifacts      = { versioning = true, lifecycle_days = 90 }
+    diffs          = { versioning = false, lifecycle_days = 30 }
+    reports        = { versioning = true, lifecycle_days = 365 }
+    agent_outputs  = { versioning = false, lifecycle_days = 30 }
+    patches        = { versioning = true, lifecycle_days = 90 }
+    incidents      = { versioning = true, lifecycle_days = 365 }
+    kb             = { versioning = true, lifecycle_days = 0 }
+    agent_packages = { versioning = true, lifecycle_days = 180 }
+    logs           = { versioning = true, lifecycle_days = 90 }
   }
 }
 
@@ -86,8 +86,8 @@ resource "aws_s3_bucket_ownership_controls" "logs" {
 }
 
 resource "aws_s3_bucket_acl" "logs" {
-  bucket = aws_s3_bucket.buckets["logs"].id
-  acl    = "log-delivery-write"
+  bucket     = aws_s3_bucket.buckets["logs"].id
+  acl        = "log-delivery-write"
   depends_on = [aws_s3_bucket_ownership_controls.logs]
 }
 
@@ -99,11 +99,11 @@ resource "aws_s3_bucket_policy" "frontend" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "DenyNonTLS"
-        Effect = "Deny"
+        Sid       = "DenyNonTLS"
+        Effect    = "Deny"
         Principal = "*"
         Action    = "s3:*"
-        Resource  = [
+        Resource = [
           "${aws_s3_bucket.buckets["frontend"].arn}",
           "${aws_s3_bucket.buckets["frontend"].arn}/*"
         ]

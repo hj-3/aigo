@@ -85,15 +85,15 @@ resource "aws_iam_role_policy" "bedrock_kb" {
         ]
       },
       {
-        Sid    = "AOSSAccess"
-        Effect = "Allow"
-        Action = ["aoss:APIAccessAll"]
+        Sid      = "AOSSAccess"
+        Effect   = "Allow"
+        Action   = ["aoss:APIAccessAll"]
         Resource = "arn:aws:aoss:${var.aws_region}:${var.aws_account_id}:collection/*"
       },
       {
-        Sid    = "EmbeddingModel"
-        Effect = "Allow"
-        Action = ["bedrock:InvokeModel"]
+        Sid      = "EmbeddingModel"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel"]
         Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/amazon.titan-embed-text-v2:0"
       }
     ]
@@ -128,7 +128,7 @@ resource "aws_opensearchserverless_security_policy" "network" {
   policy = jsonencode([{
     Rules = [
       { ResourceType = "collection", Resource = ["collection/${local.col}"] },
-      { ResourceType = "dashboard",  Resource = ["collection/${local.col}"] }
+      { ResourceType = "dashboard", Resource = ["collection/${local.col}"] }
     ]
     AllowFromPublic = true
   }])

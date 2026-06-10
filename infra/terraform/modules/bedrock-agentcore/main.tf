@@ -75,9 +75,9 @@ resource "aws_iam_role_policy" "bedrock_agent" {
         Resource = length(var.knowledge_base_arns) > 0 ? var.knowledge_base_arns : ["arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:knowledge-base/*"]
       },
       {
-        Sid    = "S3AgentPackages"
-        Effect = "Allow"
-        Action = ["s3:GetObject", "s3:ListBucket"]
+        Sid      = "S3AgentPackages"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket"]
         Resource = [var.s3_agent_packages_arn, "${var.s3_agent_packages_arn}/*"]
       }
     ]

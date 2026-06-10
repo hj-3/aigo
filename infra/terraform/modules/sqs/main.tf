@@ -60,7 +60,7 @@ resource "aws_sqs_queue" "analysis" {
   name                        = "${local.p}-analysis-queue.fifo"
   fifo_queue                  = true
   content_based_deduplication = false
-  visibility_timeout_seconds  = 900  # 15 min (max Lambda execution)
+  visibility_timeout_seconds  = 900    # 15 min (max Lambda execution)
   message_retention_seconds   = 345600 # 4 days
   kms_master_key_id           = var.kms_key_arn
 

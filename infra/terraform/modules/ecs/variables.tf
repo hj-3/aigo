@@ -6,10 +6,10 @@ variable "task_role_arn" { type = string }
 variable "execution_role_arn" { type = string }
 variable "kms_key_arn" { type = string }
 variable "logs_group_prefix" {
-  type = string
+  type    = string
   default = "/ecs"
 }
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

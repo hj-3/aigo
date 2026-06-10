@@ -37,19 +37,19 @@ resource "aws_cloudfront_distribution" "main" {
     viewer_protocol_policy = "redirect-to-https"
     compress               = true
 
-    cache_policy_id          = data.aws_cloudfront_cache_policy.optimized.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
   # /assets/* — long-lived cache
   ordered_cache_behavior {
-    path_pattern           = "/assets/*"
-    allowed_methods        = ["GET", "HEAD"]
-    cached_methods         = ["GET", "HEAD"]
-    target_origin_id       = local.origin_id
-    viewer_protocol_policy = "redirect-to-https"
-    compress               = true
-    cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
+    path_pattern               = "/assets/*"
+    allowed_methods            = ["GET", "HEAD"]
+    cached_methods             = ["GET", "HEAD"]
+    target_origin_id           = local.origin_id
+    viewer_protocol_policy     = "redirect-to-https"
+    compress                   = true
+    cache_policy_id            = data.aws_cloudfront_cache_policy.optimized.id
     response_headers_policy_id = aws_cloudfront_response_headers_policy.security.id
   }
 
@@ -106,19 +106,19 @@ resource "aws_cloudfront_response_headers_policy" "security" {
   comment = "Security headers for AgentOps Dashboard"
 
   security_headers_config {
-    content_type_options  { override = true }
+    content_type_options { override = true }
     frame_options {
       frame_option = "DENY"
-      override = true
+      override     = true
     }
     referrer_policy {
       referrer_policy = "strict-origin-when-cross-origin"
-      override = true
+      override        = true
     }
     xss_protection {
       protection = true
       mode_block = true
-      override = true
+      override   = true
     }
 
     strict_transport_security {
@@ -143,8 +143,8 @@ resource "aws_s3_bucket_policy" "frontend_cf" {
     Version = "2012-10-17"
     Statement = [
       {
-        Sid    = "AllowCloudFrontOAC"
-        Effect = "Allow"
+        Sid       = "AllowCloudFrontOAC"
+        Effect    = "Allow"
         Principal = { Service = "cloudfront.amazonaws.com" }
         Action    = "s3:GetObject"
         Resource  = "${var.frontend_bucket_arn}/*"

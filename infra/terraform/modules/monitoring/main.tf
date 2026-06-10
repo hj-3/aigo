@@ -61,8 +61,8 @@ resource "aws_cloudwatch_metric_alarm" "lambda_errors" {
     }
   }
 
-  alarm_actions = [var.sns_alarm_topic_arn]
-  ok_actions    = [var.sns_alarm_topic_arn]
+  alarm_actions      = [var.sns_alarm_topic_arn]
+  ok_actions         = [var.sns_alarm_topic_arn]
   treat_missing_data = "notBreaching"
 
   tags = local.common_tags
@@ -151,8 +151,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
         width  = 12
         height = 6
         properties = {
-          title  = "Lambda Invocations & Errors"
-          view   = "timeSeries"
+          title   = "Lambda Invocations & Errors"
+          view    = "timeSeries"
           stacked = false
           metrics = [
             for fn in var.lambda_function_names : [
@@ -170,8 +170,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
         width  = 12
         height = 6
         properties = {
-          title  = "Lambda Duration (P95)"
-          view   = "timeSeries"
+          title = "Lambda Duration (P95)"
+          view  = "timeSeries"
           metrics = [
             for fn in var.lambda_function_names : [
               "AWS/Lambda", "Duration", "FunctionName", fn, { stat = "p95" }
@@ -188,8 +188,8 @@ resource "aws_cloudwatch_dashboard" "overview" {
         width  = 12
         height = 6
         properties = {
-          title  = "SQS Queue Depths"
-          view   = "timeSeries"
+          title = "SQS Queue Depths"
+          view  = "timeSeries"
           metrics = concat(
             [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${local.p}-analysis-queue.fifo"]],
             [["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "${local.p}-notification-queue"]],
@@ -205,12 +205,12 @@ resource "aws_cloudwatch_dashboard" "overview" {
         width  = 12
         height = 6
         properties = {
-          title  = "API Gateway Requests & Errors"
-          view   = "timeSeries"
+          title = "API Gateway Requests & Errors"
+          view  = "timeSeries"
           metrics = var.api_gateway_id != "" ? [
-            ["AWS/ApiGateway", "Count",    "ApiId", var.api_gateway_id],
-            ["AWS/ApiGateway", "4xx",      "ApiId", var.api_gateway_id],
-            ["AWS/ApiGateway", "5xx",      "ApiId", var.api_gateway_id],
+            ["AWS/ApiGateway", "Count", "ApiId", var.api_gateway_id],
+            ["AWS/ApiGateway", "4xx", "ApiId", var.api_gateway_id],
+            ["AWS/ApiGateway", "5xx", "ApiId", var.api_gateway_id],
           ] : []
           period = 300
           region = var.aws_region

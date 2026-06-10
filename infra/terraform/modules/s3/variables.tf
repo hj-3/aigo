@@ -16,6 +16,6 @@ variable "replication_destination_account" {
   default     = ""
 }
 variable "tags" {
-  type = map(string)
+  type    = map(string)
   default = {}
 }

@@ -43,15 +43,15 @@ resource "aws_ecs_task_definition" "heavy_worker" {
   family                   = "${local.p}-heavy-worker"
   requires_compatibilities = ["FARGATE"]
   network_mode             = "awsvpc"
-  cpu                      = "2048"   # 2 vCPU
-  memory                   = "4096"   # 4 GB
+  cpu                      = "2048" # 2 vCPU
+  memory                   = "4096" # 4 GB
   task_role_arn            = var.task_role_arn
   execution_role_arn       = var.execution_role_arn
 
   container_definitions = jsonencode([
     {
       name      = "heavy-worker"
-      image     = "placeholder"  # Updated by CI/CD
+      image     = "placeholder" # Updated by CI/CD
       essential = true
 
       environment = [

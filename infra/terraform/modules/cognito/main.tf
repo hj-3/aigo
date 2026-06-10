@@ -92,9 +92,9 @@ resource "aws_cognito_user_pool_client" "dashboard" {
 
   supported_identity_providers = ["COGNITO"]
 
-  access_token_validity  = 60   # minutes
+  access_token_validity  = 60 # minutes
   id_token_validity      = 60
-  refresh_token_validity = 30   # days
+  refresh_token_validity = 30 # days
 
   token_validity_units {
     access_token  = "minutes"
