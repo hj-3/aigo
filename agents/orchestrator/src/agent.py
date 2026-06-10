@@ -74,7 +74,6 @@ def build_agent() -> Agent:
             github_tools.post_pr_comment,
             pr_tools.get_diff_content,
         ],
-        max_parallel_steps=4,
     )
 
 

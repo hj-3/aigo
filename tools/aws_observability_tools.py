@@ -103,6 +103,7 @@ def get_cloudwatch_logs(
 
     import time
 
+    result: dict = {"status": "Unknown", "results": []}
     for _ in range(30):
         result = logs.get_query_results(queryId=query_id)
         if result["status"] in ("Complete", "Failed", "Cancelled"):

@@ -23,7 +23,7 @@ def get_installation_token(repo_full_name: str) -> str:
         integration_id=int(creds["appId"]),
         private_key=creds["privateKey"],
     )
-    installation = integration.get_installation(*repo_full_name.split("/", 1))
+    installation = integration.get_repo_installation(*repo_full_name.split("/", 1))
     return integration.get_access_token(installation.id).token
 
 
