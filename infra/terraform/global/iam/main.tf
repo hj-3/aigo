@@ -53,9 +53,8 @@ resource "aws_iam_role" "github_actions_deploy" {
   tags = local.common_tags
 }
 
-resource "aws_iam_role_policy" "github_actions_deploy" {
-  name = "${local.p}-github-actions-deploy-policy"
-  role = aws_iam_role.github_actions_deploy.id
+resource "aws_iam_policy" "github_actions_core" {
+  name = "${local.p}-github-actions-core"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -139,6 +138,11 @@ resource "aws_iam_role_policy" "github_actions_deploy" {
       }
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_core" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = aws_iam_policy.github_actions_core.arn
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -424,11 +428,12 @@ resource "aws_iam_role_policy" "ecs_execution_ecr" {
 # ──────────────────────────────────────────────────────────────────────────────
 # Additional permissions for GitHub Actions Terraform apply
 # (Terraform must Read existing resources during plan/refresh phase)
+# Implemented as managed policies (not inline) to avoid the 10,240-byte
+# combined inline policy limit per IAM role.
 # ──────────────────────────────────────────────────────────────────────────────
 
-resource "aws_iam_role_policy" "github_actions_tf_compute" {
+resource "aws_iam_policy" "github_actions_tf_compute" {
   name = "${local.p}-github-actions-tf-compute"
-  role = aws_iam_role.github_actions_deploy.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -502,9 +507,13 @@ resource "aws_iam_role_policy" "github_actions_tf_compute" {
   })
 }
 
-resource "aws_iam_role_policy" "github_actions_tf_app" {
+resource "aws_iam_role_policy_attachment" "github_actions_tf_compute" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = aws_iam_policy.github_actions_tf_compute.arn
+}
+
+resource "aws_iam_policy" "github_actions_tf_app" {
   name = "${local.p}-github-actions-tf-app"
-  role = aws_iam_role.github_actions_deploy.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -645,9 +654,13 @@ resource "aws_iam_role_policy" "github_actions_tf_app" {
   })
 }
 
-resource "aws_iam_role_policy" "github_actions_tf_iam_data" {
-  name = "${local.p}-github-actions-tf-iam-data"
-  role = aws_iam_role.github_actions_deploy.id
+resource "aws_iam_role_policy_attachment" "github_actions_tf_app" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = aws_iam_policy.github_actions_tf_app.arn
+}
+
+resource "aws_iam_policy" "github_actions_tf_iam_kms" {
+  name = "${local.p}-github-actions-tf-iam-kms"
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -689,6 +702,21 @@ resource "aws_iam_role_policy" "github_actions_tf_iam_data" {
         ]
         Resource = "*"
       },
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_tf_iam_kms" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = aws_iam_policy.github_actions_tf_iam_kms.arn
+}
+
+resource "aws_iam_policy" "github_actions_tf_data_sec" {
+  name = "${local.p}-github-actions-tf-data-sec"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
       {
         Sid    = "S3BucketManage"
         Effect = "Allow"
@@ -784,4 +812,9 @@ resource "aws_iam_role_policy" "github_actions_tf_iam_data" {
       },
     ]
   })
+}
+
+resource "aws_iam_role_policy_attachment" "github_actions_tf_data_sec" {
+  role       = aws_iam_role.github_actions_deploy.name
+  policy_arn = aws_iam_policy.github_actions_tf_data_sec.arn
 }

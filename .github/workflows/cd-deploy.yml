@@ -14,9 +14,15 @@ permissions:
   id-token: write
   contents: read
 
+# Prevent concurrent Terraform runs — queue new runs, never cancel in progress.
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
 env:
   AWS_REGION: ap-northeast-2
   TF_VERSION: "1.10.3"
+  TF_STATE_BUCKET: aigo-tf-state
   ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.ap-northeast-2.amazonaws.com
 
 jobs:
@@ -49,6 +55,26 @@ jobs:
         working-directory: infra/terraform/global/iam
         run: terraform init -reconfigure
 
+      - name: Clear stale lock (global/iam)
+        working-directory: infra/terraform/global/iam
+        run: |
+          LOCK_KEY="global/iam/terraform.tfstate.tflock"
+          if aws s3 cp "s3://${{ env.TF_STATE_BUCKET }}/${LOCK_KEY}" /tmp/iam.lock 2>/dev/null; then
+            LOCK_ID=$(jq -r '.ID' /tmp/iam.lock)
+            CREATED=$(jq -r '.Created' /tmp/iam.lock)
+            CREATED_TS=$(date -d "${CREATED}" +%s)
+            AGE_MIN=$(( ($(date +%s) - CREATED_TS) / 60 ))
+            echo "Lock found: ID=${LOCK_ID}, age=${AGE_MIN}min"
+            if [ "${AGE_MIN}" -gt 30 ]; then
+              echo "Stale lock (>${AGE_MIN}min) — force-unlocking..."
+              terraform force-unlock -force "${LOCK_ID}"
+            else
+              echo "Lock is recent, will rely on -lock-timeout"
+            fi
+          else
+            echo "No lock file — proceeding"
+          fi
+
       - name: Terraform Apply (global/iam)
         working-directory: infra/terraform/global/iam
         run: terraform apply -auto-approve -no-color -lock-timeout=5m
@@ -61,6 +87,26 @@ jobs:
       - name: Terraform Init
         working-directory: infra/terraform/envs/prod
         run: terraform init -reconfigure
+
+      - name: Clear stale lock (envs/prod)
+        working-directory: infra/terraform/envs/prod
+        run: |
+          LOCK_KEY="prod/terraform.tfstate.tflock"
+          if aws s3 cp "s3://${{ env.TF_STATE_BUCKET }}/${LOCK_KEY}" /tmp/prod.lock 2>/dev/null; then
+            LOCK_ID=$(jq -r '.ID' /tmp/prod.lock)
+            CREATED=$(jq -r '.Created' /tmp/prod.lock)
+            CREATED_TS=$(date -d "${CREATED}" +%s)
+            AGE_MIN=$(( ($(date +%s) - CREATED_TS) / 60 ))
+            echo "Lock found: ID=${LOCK_ID}, age=${AGE_MIN}min"
+            if [ "${AGE_MIN}" -gt 30 ]; then
+              echo "Stale lock (>${AGE_MIN}min) — force-unlocking..."
+              terraform force-unlock -force "${LOCK_ID}"
+            else
+              echo "Lock is recent, will rely on -lock-timeout"
+            fi
+          else
+            echo "No lock file — proceeding"
+          fi
 
       - name: Terraform Apply
         working-directory: infra/terraform/envs/prod
