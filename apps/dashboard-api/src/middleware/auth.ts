@@ -26,6 +26,7 @@ export function requireAuth(): MiddlewareHandler {
     }
     c.set('claims', claims);
     await next();
+    return;
   };
 }
 
@@ -42,5 +43,6 @@ export function requireRole(minRole: 'OWNER' | 'ADMIN' | 'REVIEWER' | 'VIEWER'):
     }
     c.set('claims', claims);
     await next();
+    return;
   };
 }
