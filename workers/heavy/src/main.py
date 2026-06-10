@@ -1,4 +1,5 @@
 """ECS Fargate task entrypoint."""
+
 import sys
 
 import structlog

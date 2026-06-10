@@ -2,6 +2,7 @@
 Knowledge Base Tools — search Bedrock Knowledge Base for coding standards,
 security policies, and infrastructure guidelines.
 """
+
 from __future__ import annotations
 
 import os

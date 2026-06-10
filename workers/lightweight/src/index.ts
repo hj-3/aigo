@@ -1,5 +1,4 @@
 import type { SQSEvent, SQSBatchResponse, Context } from 'aws-lambda';
-import { ddbUpdate, Config } from '@aigo/aws-clients';
 import { getLogger } from '@aigo/logger';
 import { processRecord } from './handler.js';
 

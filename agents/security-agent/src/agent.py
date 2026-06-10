@@ -1,6 +1,7 @@
 """
 Security Agent — identifies security vulnerabilities in PR changes.
 """
+
 from __future__ import annotations
 
 import json

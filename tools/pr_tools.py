@@ -2,6 +2,7 @@
 PR Tools — read PR diffs and file contents from S3.
 Agents use these to access code without direct GitHub access.
 """
+
 from __future__ import annotations
 
 import os

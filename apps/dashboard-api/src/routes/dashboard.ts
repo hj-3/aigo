@@ -34,10 +34,6 @@ dashboardRouter.get('/stats', async (c) => {
       TableName: Config.tableName('Approvals'),
       IndexName: 'GSI2',
       KeyConditionExpression: 'GSI2PK = :pk AND GSI2SK >= :today',
-      ExpressionAttributeValues: {
-        ':pk': `ORG#${orgId}`,
-        ':today': today.toISOString(),
-      },
       FilterExpression: 'decision = :approved',
       ExpressionAttributeValues: {
         ':pk': `ORG#${orgId}`,

@@ -1,7 +1,6 @@
 import type { EventBridgeEvent, Context } from 'aws-lambda';
 import { ddbPut, sqsSendMessage, Config } from '@aigo/aws-clients';
 import { getLogger, createContextLogger } from '@aigo/logger';
-import type { CloudWatchAlarmEvent } from '@aigo/types';
 import { randomUUID } from 'node:crypto';
 
 const logger = getLogger('aws-event-connector');

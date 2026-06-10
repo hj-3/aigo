@@ -16,9 +16,7 @@ _resource: Any = None
 def _get_resource() -> Any:
     global _resource  # noqa: PLW0603
     if _resource is None:
-        _resource = boto3.resource(
-            "dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2")
-        )
+        _resource = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
     return _resource
 
 

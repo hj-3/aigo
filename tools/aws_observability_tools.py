@@ -2,6 +2,7 @@
 AWS Observability Tools — query CloudWatch metrics, logs, and X-Ray traces.
 Incident Agent uses these to investigate production issues.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,8 +62,7 @@ def get_cloudwatch_metrics(
         "period_minutes": period_minutes,
         "stat": stat,
         "data_points": [
-            {"timestamp": str(p["Timestamp"]), "value": p.get(stat, 0), "unit": p.get("Unit", "")}
-            for p in points
+            {"timestamp": str(p["Timestamp"]), "value": p.get(stat, 0), "unit": p.get("Unit", "")} for p in points
         ],
     }
     logger.info("Metrics retrieved", namespace=namespace, metric=metric_name, points=len(points))
@@ -102,6 +102,7 @@ def get_cloudwatch_logs(
     query_id = response["queryId"]
 
     import time
+
     for _ in range(30):
         result = logs.get_query_results(queryId=query_id)
         if result["status"] in ("Complete", "Failed", "Cancelled"):
@@ -222,13 +223,16 @@ def get_resource_config(resource_type: str, resource_id: str) -> str:
             return json.dumps({"error": f"No config found for {resource_type}/{resource_id}"})
 
         item = items[0]
-        return json.dumps({
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "configuration": json.loads(item.get("configuration", "{}")),
-            "tags": item.get("tags", {}),
-            "capture_time": str(item.get("configurationItemCaptureTime", "")),
-        }, default=str)
+        return json.dumps(
+            {
+                "resource_type": resource_type,
+                "resource_id": resource_id,
+                "configuration": json.loads(item.get("configuration", "{}")),
+                "tags": item.get("tags", {}),
+                "capture_time": str(item.get("configurationItemCaptureTime", "")),
+            },
+            default=str,
+        )
     except Exception as e:
         logger.error("Config lookup failed", resource_type=resource_type, error=str(e))
         return json.dumps({"error": str(e)})

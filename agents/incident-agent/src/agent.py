@@ -1,6 +1,7 @@
 """
 Incident Agent — investigates production incidents using AWS observability data.
 """
+
 from __future__ import annotations
 
 import json

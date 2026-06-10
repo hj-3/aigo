@@ -2,6 +2,7 @@
 GitHub Tools — post comments and update PR status.
 Agents use these to report findings back to GitHub PRs.
 """
+
 from __future__ import annotations
 
 import json
@@ -25,6 +26,7 @@ def _get_installation_token(repo_full_name: str) -> str:
     creds = json.loads(sm.get_secret_value(SecretId=secret_arn)["SecretString"])
 
     from github_auth import create_installation_token  # type: ignore[import]
+
     return create_installation_token(
         app_id=creds["appId"],
         private_key=creds["privateKey"],

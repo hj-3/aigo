@@ -23,9 +23,7 @@ def get_installation_token(repo_full_name: str) -> str:
         integration_id=int(creds["appId"]),
         private_key=creds["privateKey"],
     )
-    installation = integration.get_installation(
-        *repo_full_name.split("/", 1)
-    )
+    installation = integration.get_installation(*repo_full_name.split("/", 1))
     return integration.get_access_token(installation.id).token
 
 
@@ -44,6 +42,7 @@ def create_fix_branch(
 
 def push_fix_branch(repo_dir_path: str, fix_branch_name: str, access_token: str, repo_full_name: str) -> None:
     import subprocess
+
     remote_url = f"https://x-access-token:{access_token}@github.com/{repo_full_name}.git"
     subprocess.run(
         ["git", "remote", "set-url", "origin", remote_url],

@@ -39,7 +39,7 @@ class AgentFinding(BaseModel):
 
     model_config = {"frozen": True}
 
-    agent: str                  # AgentType literal
+    agent: str  # AgentType literal
     severity: Severity
     category: FindingCategory
     title: str

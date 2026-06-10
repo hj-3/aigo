@@ -6,12 +6,14 @@ on:
     paths:
       - 'apps/dashboard/**'
       - 'packages/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/ci-dashboard.yml'
   push:
     branches: [main]
     paths:
       - 'apps/dashboard/**'
       - 'packages/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/ci-dashboard.yml'
 
 permissions:

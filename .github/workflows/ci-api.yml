@@ -8,6 +8,7 @@ on:
       - 'connectors/**'
       - 'workers/lightweight/**'
       - 'packages/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/ci-api.yml'
   push:
     branches: [main]
@@ -16,6 +17,7 @@ on:
       - 'connectors/**'
       - 'workers/lightweight/**'
       - 'packages/**'
+      - 'pnpm-lock.yaml'
       - '.github/workflows/ci-api.yml'
 
 permissions:
@@ -36,11 +38,16 @@ jobs:
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
 
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
       - name: Cache pnpm
         uses: actions/cache@v4
         with:
-          path: $(pnpm store path --silent)
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
           key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile

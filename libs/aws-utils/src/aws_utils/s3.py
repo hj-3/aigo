@@ -13,9 +13,7 @@ _client: Any = None
 def _get_client() -> Any:
     global _client  # noqa: PLW0603
     if _client is None:
-        _client = boto3.client(
-            "s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2")
-        )
+        _client = boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
     return _client
 
 

@@ -5,6 +5,7 @@ CRITICAL CONSTRAINT: This agent ONLY creates patches (unified diff files).
 It NEVER runs terraform apply, kubectl apply, or any AWS resource modification.
 All infrastructure fixes are in patch form for human review via the Fix PR.
 """
+
 from __future__ import annotations
 
 import json

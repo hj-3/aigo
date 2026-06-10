@@ -2,6 +2,7 @@
 Slack Tools — send notifications to Slack channels via Slack API.
 All Slack interactions go through these tools (no direct webhook calls from agents).
 """
+
 from __future__ import annotations
 
 import json
@@ -75,23 +76,40 @@ def notify_analysis_complete(
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": f"{risk_emoji} AgentOps Analysis Complete"}},
-        {"type": "section", "fields": [
-            {"type": "mrkdwn", "text": f"*Repository:*\n{repo_name}"},
-            {"type": "mrkdwn", "text": f"*PR:*\n<{pr_url}|#{pr_number}>"},
-            {"type": "mrkdwn", "text": f"*Risk Level:*\n{risk_emoji} {risk_level}"},
-            {"type": "mrkdwn", "text": f"*Recommendation:*\n{rec_emoji} {merge_recommendation}"},
-        ]},
-        {"type": "section", "text": {"type": "mrkdwn", "text": (
-            f"*Findings:* "
-            f"🔴 {findings_summary.get('CRITICAL', 0)} Critical | "
-            f"🟠 {findings_summary.get('HIGH', 0)} High | "
-            f"🟡 {findings_summary.get('MEDIUM', 0)} Medium | "
-            f"🟢 {findings_summary.get('LOW', 0)} Low"
-        )}},
-        {"type": "actions", "elements": [
-            {"type": "button", "text": {"type": "plain_text", "text": "View Report"}, "url": report_url, "style": "primary"},  # noqa: E501
-            {"type": "button", "text": {"type": "plain_text", "text": "View PR"}, "url": pr_url},
-        ]},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Repository:*\n{repo_name}"},
+                {"type": "mrkdwn", "text": f"*PR:*\n<{pr_url}|#{pr_number}>"},
+                {"type": "mrkdwn", "text": f"*Risk Level:*\n{risk_emoji} {risk_level}"},
+                {"type": "mrkdwn", "text": f"*Recommendation:*\n{rec_emoji} {merge_recommendation}"},
+            ],
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": (
+                    f"*Findings:* "
+                    f"🔴 {findings_summary.get('CRITICAL', 0)} Critical | "
+                    f"🟠 {findings_summary.get('HIGH', 0)} High | "
+                    f"🟡 {findings_summary.get('MEDIUM', 0)} Medium | "
+                    f"🟢 {findings_summary.get('LOW', 0)} Low"
+                ),
+            },
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "View Report"},
+                    "url": report_url,
+                    "style": "primary",
+                },  # noqa: E501
+                {"type": "button", "text": {"type": "plain_text", "text": "View PR"}, "url": pr_url},
+            ],
+        },
     ]
 
     _post_message(channel, blocks, f"AgentOps Analysis Complete: {repo_name} PR #{pr_number} — {risk_level}")
@@ -128,12 +146,15 @@ def send_incident_update(
 
     blocks = [
         {"type": "header", "text": {"type": "plain_text", "text": f"{severity_emoji} Incident: {title}"}},
-        {"type": "section", "fields": [
-            {"type": "mrkdwn", "text": f"*Incident ID:*\n`{incident_id}`"},
-            {"type": "mrkdwn", "text": f"*Status:*\n{status_emoji} {status}"},
-            {"type": "mrkdwn", "text": f"*Severity:*\n{severity_emoji} {severity}"},
-            {"type": "mrkdwn", "text": f"*Affected Services:*\n{', '.join(affected_services) or 'Unknown'}"},
-        ]},
+        {
+            "type": "section",
+            "fields": [
+                {"type": "mrkdwn", "text": f"*Incident ID:*\n`{incident_id}`"},
+                {"type": "mrkdwn", "text": f"*Status:*\n{status_emoji} {status}"},
+                {"type": "mrkdwn", "text": f"*Severity:*\n{severity_emoji} {severity}"},
+                {"type": "mrkdwn", "text": f"*Affected Services:*\n{', '.join(affected_services) or 'Unknown'}"},
+            ],
+        },
         {"type": "section", "text": {"type": "mrkdwn", "text": f"*Update:*\n{update_message}"}},
     ]
 

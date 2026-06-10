@@ -1,6 +1,7 @@
 """
 Risk Reviewer Agent — assesses business risk of PR changes.
 """
+
 from __future__ import annotations
 
 import json

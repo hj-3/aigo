@@ -1,5 +1,4 @@
-import { Octokit } from '@octokit/rest';
-import { getSecret, Config } from '@aigo/aws-clients';
+import { getSecret } from '@aigo/aws-clients';
 import { getLogger } from '@aigo/logger';
 import { createOctokitWithInstallation } from './github-auth.js';
 

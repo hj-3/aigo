@@ -2,6 +2,7 @@
 DynamoDB Tools — persist agent findings, reports, and status updates.
 All DynamoDB writes go through these tools to maintain auditability.
 """
+
 from __future__ import annotations
 
 import json
@@ -106,26 +107,28 @@ def save_report(
     now = _utcnow()
 
     table = _table("Reports")
-    table.put_item(Item={
-        "PK": f"REPORT#{report_id}",
-        "SK": "METADATA",
-        "reportId": report_id,
-        "jobId": job_id,
-        "orgId": org_id,
-        "repoId": repo_id,
-        "riskLevel": risk_level,
-        "mergeRecommendation": merge_recommendation,
-        "approvalStatus": "PENDING",
-        "summary": summary,
-        "findingsBySeverity": findings_by_severity,
-        "reportS3Key": report_s3_key,
-        "createdAt": now,
-        "updatedAt": now,
-        "GSI1PK": f"ORG#{org_id}",
-        "GSI1SK": now,
-        "GSI2PK": f"REPO#{repo_id}",
-        "GSI2SK": now,
-    })
+    table.put_item(
+        Item={
+            "PK": f"REPORT#{report_id}",
+            "SK": "METADATA",
+            "reportId": report_id,
+            "jobId": job_id,
+            "orgId": org_id,
+            "repoId": repo_id,
+            "riskLevel": risk_level,
+            "mergeRecommendation": merge_recommendation,
+            "approvalStatus": "PENDING",
+            "summary": summary,
+            "findingsBySeverity": findings_by_severity,
+            "reportS3Key": report_s3_key,
+            "createdAt": now,
+            "updatedAt": now,
+            "GSI1PK": f"ORG#{org_id}",
+            "GSI1SK": now,
+            "GSI2PK": f"REPO#{repo_id}",
+            "GSI2SK": now,
+        }
+    )
 
     # Update job to link report
     _table("AnalysisJobs").update_item(
@@ -262,9 +265,7 @@ def get_findings_for_report(report_id: str) -> str:
         JSON string containing the list of findings
     """
     # First get the job_id from the report
-    report = _table("Reports").get_item(
-        Key={"PK": f"REPORT#{report_id}", "SK": "METADATA"}
-    ).get("Item")
+    report = _table("Reports").get_item(Key={"PK": f"REPORT#{report_id}", "SK": "METADATA"}).get("Item")
 
     if not report:
         return json.dumps({"error": f"Report {report_id} not found"})

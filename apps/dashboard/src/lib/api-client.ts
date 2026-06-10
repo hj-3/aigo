@@ -35,7 +35,10 @@ async function request<T>(
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ code: 'UNKNOWN', message: 'Request failed' }));
+    const error = (await response.json().catch(() => ({ code: 'UNKNOWN', message: 'Request failed' }))) as {
+      code?: string;
+      message?: string;
+    };
     throw new ApiError(response.status, error.code ?? 'UNKNOWN', error.message ?? 'Request failed');
   }
 

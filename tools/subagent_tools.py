@@ -1,6 +1,7 @@
 """
 Sub-agent Tools — Orchestrator uses these to invoke specialized agents via Bedrock AgentCore.
 """
+
 from __future__ import annotations
 
 import os
@@ -53,13 +54,12 @@ def invoke_code_reviewer(job_input_json: str) -> str:
     """
     import asyncio
     from uuid import uuid4
+
     agent_id = _require("CODE_REVIEWER_AGENT_ID")
     alias_id = _require("CODE_REVIEWER_ALIAS_ID")
     session_id = f"code-review-{uuid4()}"
     logger.info("Invoking code reviewer", session_id=session_id)
-    result = asyncio.get_event_loop().run_until_complete(
-        _invoke_agent(agent_id, alias_id, session_id, job_input_json)
-    )
+    result = asyncio.get_event_loop().run_until_complete(_invoke_agent(agent_id, alias_id, session_id, job_input_json))
     logger.info("Code reviewer complete", session_id=session_id)
     return result
 
@@ -77,13 +77,12 @@ def invoke_infra_reviewer(job_input_json: str) -> str:
     """
     import asyncio
     from uuid import uuid4
+
     agent_id = _require("INFRA_REVIEWER_AGENT_ID")
     alias_id = _require("INFRA_REVIEWER_ALIAS_ID")
     session_id = f"infra-review-{uuid4()}"
     logger.info("Invoking infra reviewer", session_id=session_id)
-    result = asyncio.get_event_loop().run_until_complete(
-        _invoke_agent(agent_id, alias_id, session_id, job_input_json)
-    )
+    result = asyncio.get_event_loop().run_until_complete(_invoke_agent(agent_id, alias_id, session_id, job_input_json))
     logger.info("Infra reviewer complete", session_id=session_id)
     return result
 
@@ -101,13 +100,12 @@ def invoke_risk_reviewer(job_input_json: str) -> str:
     """
     import asyncio
     from uuid import uuid4
+
     agent_id = _require("RISK_REVIEWER_AGENT_ID")
     alias_id = _require("RISK_REVIEWER_ALIAS_ID")
     session_id = f"risk-review-{uuid4()}"
     logger.info("Invoking risk reviewer", session_id=session_id)
-    result = asyncio.get_event_loop().run_until_complete(
-        _invoke_agent(agent_id, alias_id, session_id, job_input_json)
-    )
+    result = asyncio.get_event_loop().run_until_complete(_invoke_agent(agent_id, alias_id, session_id, job_input_json))
     logger.info("Risk reviewer complete", session_id=session_id)
     return result
 
@@ -125,12 +123,11 @@ def invoke_security_agent(job_input_json: str) -> str:
     """
     import asyncio
     from uuid import uuid4
+
     agent_id = _require("SECURITY_AGENT_ID")
     alias_id = _require("SECURITY_ALIAS_ID")
     session_id = f"security-{uuid4()}"
     logger.info("Invoking security agent", session_id=session_id)
-    result = asyncio.get_event_loop().run_until_complete(
-        _invoke_agent(agent_id, alias_id, session_id, job_input_json)
-    )
+    result = asyncio.get_event_loop().run_until_complete(_invoke_agent(agent_id, alias_id, session_id, job_input_json))
     logger.info("Security agent complete", session_id=session_id)
     return result

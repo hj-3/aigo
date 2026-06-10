@@ -11,6 +11,7 @@ Flow:
   6. Notify via slack_tools
   7. Post GitHub PR comment via github_tools
 """
+
 from __future__ import annotations
 
 import json

@@ -1,7 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { z } from 'zod';
-import { ddbPut, ddbGet, sqsSendMessage, getSecret } from '@aigo/aws-clients';
-import { Config } from '@aigo/aws-clients';
+import { ddbPut, ddbGet, sqsSendMessage, getSecret, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { GitHubPRWebhookPayload } from '@aigo/types';
 import { validateGitHubSignature, extractRawBody } from './validator.js';
@@ -27,7 +25,6 @@ export async function handleGitHubWebhook(
   const logger = createContextLogger({ requestId, source: 'github-connector' });
 
   // ── 1. Validate signature ──────────────────────────────────────────────────
-  const secretArn = Config.s3.artifactsBucket; // placeholder; real: process.env.GITHUB_SECRET_ARN
   const githubSecretArn = process.env['GITHUB_SECRET_ARN'];
   if (!githubSecretArn) {
     logger.error('GITHUB_SECRET_ARN env var missing');

@@ -1,6 +1,7 @@
 """
 Repo Tools — inspect repository metadata, dependency graphs, and deployment history.
 """
+
 from __future__ import annotations
 
 import json
@@ -86,6 +87,7 @@ def get_recent_deployments(repo_id: str, limit: int = 10) -> str:
         JSON string with list of recent deployments
     """
     import boto3
+
     ddb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
     prefix = os.environ.get("DYNAMODB_TABLE_PREFIX", "aigo")
 

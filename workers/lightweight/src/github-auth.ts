@@ -1,5 +1,5 @@
 import { Octokit } from '@octokit/rest';
-import { createHmac, createSign } from 'node:crypto';
+import { createSign } from 'node:crypto';
 
 interface GithubAppCreds {
   readonly appId: string;
