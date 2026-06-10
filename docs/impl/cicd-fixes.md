@@ -349,6 +349,104 @@ installation = integration.get_repo_installation(*repo_full_name.split("/", 1))
 
 ---
 
+---
+
+## 16. Pyright 65개 오류 (ci-agents) — boto3-stubs 엄격 타입 적용
+
+**발생 시점**  
+boto3-stubs 추가(섹션 15) 이후 CI 재실행 시 새로 발생. 라이브러리가 TypedDict·Literal 타입을 강제 적용하면서 기존 코드에서 탐지됨.
+
+**오류 패턴 및 수정**
+
+### 패턴 1 — NotRequired TypedDict 키 직접 접근 (`reportTypedDictNotRequiredAccess`)
+
+TypedDict의 Optional 키를 `["key"]`로 직접 접근하면 Pyright strict 모드에서 오류 발생.  
+`.get("key", default)` 방식으로 교체.
+
+| 파일 | 수정 전 | 수정 후 |
+|------|---------|---------|
+| `dynamodb.py:46` | `e.response["Error"]["Code"]` | `e.response.get("Error", {}).get("Code")` |
+| `handler.py:58` | `message["ReceiptHandle"]` | `message.get("ReceiptHandle", "")` |
+| `handler.py:61` | `message["Body"]` | `message.get("Body", "{}")` |
+| `aws_observability_tools.py:58,65` | `p["Timestamp"]` (lambda, comprehension) | `p.get("Timestamp")` / `p.get("Timestamp", "")` |
+| `aws_observability_tools.py:190-191` | `a["AlarmName"]`, `a["StateValue"]` | `a.get("AlarmName", "")`, `a.get("StateValue", "")` |
+| `subagent_tools.py:39` | `event["chunk"]["bytes"]` | `event["chunk"].get("bytes", b"")` |
+
+### 패턴 2 — `boto3.client` 반환 타입 어노테이션 오류 (`reportGeneralTypeIssues`)
+
+`boto3.client`는 Overloaded 함수이지 타입이 아님. 반환 타입으로 사용 불가.  
+`-> Any`로 교체.
+
+```python
+# 수정 전 (오류)
+def _s3() -> boto3.client:
+
+# 수정 후
+def _s3() -> Any:
+```
+
+**적용 파일**: `patch_tools.py`, `pr_tools.py`, `repo_tools.py`, `kb_tools.py`
+
+### 패턴 3 — `str` → Literal 제약 위반 (`reportArgumentType`)
+
+boto3 API 파라미터 중 일부는 특정 문자열만 허용하는 `Literal` 타입 요구.  
+동적 str 값을 `cast(Any, value)`로 감싸서 억제.
+
+```python
+Statistics=cast(Any, [stat]),
+StateValue=cast(Any, state),
+resourceType=cast(Any, resource_type),
+```
+
+**적용 파일**: `aws_observability_tools.py`
+
+### 패턴 4 — DynamoDB AttributeValue → str 할당 오류 (`reportAssignmentType`)
+
+DynamoDB 아이템 값의 타입이 `str | int | Decimal | bytes | ...` 유니언이므로 `str` 변수에 직접 할당 불가.  
+`cast(str, ...)` 또는 `cast(list[Any], ...)` 사용.
+
+```python
+# handler.py
+repo_full_name: str = cast(str, repo_item["providerRepoFullName"])
+patch_object = s3.get_object(Bucket=..., Key=cast(str, patch_s3_key))
+
+# repo_tools.py — 중첩 dict 접근 허용
+items: list[Any] = cast(list[Any], response.get("Items", []))
+```
+
+### 패턴 5 — `**kwargs` 파라미터 타입 미선언 (`reportMissingParameterType`)
+
+```python
+# 수정 전
+def _github_request(method: str, url: str, token: str, **kwargs) -> dict:
+
+# 수정 후
+def _github_request(method: str, url: str, token: str, **kwargs: Any) -> dict:
+```
+
+또한 `handler.py`의 `_fail_fix_request(fix_table, ...)` → `fix_table: Any` 추가.
+
+**수정 파일 (9개)**
+
+```
+libs/aws-utils/src/aws_utils/dynamodb.py
+tools/aws_observability_tools.py
+tools/github_tools.py
+tools/kb_tools.py
+tools/patch_tools.py
+tools/pr_tools.py
+tools/repo_tools.py
+tools/subagent_tools.py
+workers/heavy/src/handler.py
+```
+
+**공통 처리 방식**  
+`reportUnknownVariableType` 등 노이즈성 규칙은 pyright 설정에서 이미 억제(섹션 15).  
+`reportArgumentType`·`reportTypedDictNotRequiredAccess`·`reportGeneralTypeIssues` 등 실제 타입 안전성 규칙은 코드 수정으로 해결.  
+`from typing import Any, cast` 임포트를 각 파일에 추가.
+
+---
+
 ## CI 상태 요약
 
 | 워크플로우 | 이전 상태 | 현재 상태 |
