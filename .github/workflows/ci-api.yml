@@ -55,6 +55,9 @@ jobs:
       - name: Type check all packages
         run: pnpm -r --filter="{packages/**}" type-check
 
+      - name: Build shared packages
+        run: pnpm -r --filter="{packages/**}" build
+
       - name: Type check connectors
         run: |
           pnpm -F "@aigo/connector-github" type-check
