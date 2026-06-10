@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { ddbGet, ddbQuery, Config } from '@aigo/aws-clients';
-import { requireAuth, requireRole, extractClaims } from '../middleware/auth.js';
+import { requireAuth, extractClaims } from '../middleware/auth.js';
 
 export const reportsRouter = new Hono();
 
