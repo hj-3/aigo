@@ -26,7 +26,7 @@ export interface FetchedDiff {
 export async function fetchAndStorePrDiff(
   repoFullName: string,
   prContext: PrContext,
-  orgId: string,
+  _orgId: string,
 ): Promise<FetchedDiff> {
   const githubSecretArn = process.env['GITHUB_SECRET_ARN']!;
   const credentials = await getSecret(githubSecretArn) as unknown as {

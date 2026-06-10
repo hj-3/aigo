@@ -1,4 +1,4 @@
-import type { SQSEvent, SQSRecord } from 'aws-lambda';
+import type { SQSRecord } from 'aws-lambda';
 import { ddbGet, ddbUpdate, s3PutObject, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import { fetchAndStorePrDiff } from './diff-fetcher.js';
