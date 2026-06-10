@@ -577,3 +577,31 @@ terraform apply -auto-approve
 ```
 
 이후 역할이 IAM 권한을 가지므로 CD가 `global/iam` apply를 자동으로 처리함.
+
+---
+
+## 19. Bedrock KB / CloudTrail refresh 권한 누락 (cd-deploy)
+
+**오류**
+```
+Error: reading Bedrock Agent Knowledge Base (BTLXQGMG9F)
+AccessDeniedException: not authorized to perform: bedrock:GetKnowledgeBase
+
+Error: reading CloudTrail Trail
+AccessDeniedException: not authorized to perform: cloudtrail:DescribeTrails
+```
+
+**원인**  
+`github_actions_tf_platform` 정책에 `bedrock:*`와 `cloudtrail:*`가 없음.  
+Terraform refresh 단계에서 두 리소스 읽기 실패 → apply 전체 중단.
+
+**수정**  
+`infra/terraform/global/iam/main.tf`의 `github_actions_tf_platform` 정책에 두 SID 추가:
+
+```hcl
+{ Sid = "BedrockFull",    Effect = "Allow", Action = ["bedrock:*"],    Resource = "*" },
+{ Sid = "CloudTrailFull", Effect = "Allow", Action = ["cloudtrail:*"], Resource = "*" },
+```
+
+**흐름**  
+CD step 1 (`global/iam` apply) → 정책 즉시 반영 → step 2 (`envs/prod` apply) 성공.
