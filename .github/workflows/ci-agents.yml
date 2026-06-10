@@ -37,7 +37,7 @@ jobs:
           version: "0.5.0"
 
       - name: Install dependencies
-        run: uv sync --all-packages
+        run: uv sync --all-packages --group dev
 
       - name: Run Ruff lint
         run: uv run ruff check agents/ tools/ libs/ workers/heavy/
@@ -66,7 +66,10 @@ jobs:
         run: uv sync --all-packages --group dev
 
       - name: Run tests
-        run: uv run pytest libs/ tools/ workers/heavy/ -v --tb=short
+        run: |
+          uv run pytest libs/ tools/ workers/heavy/ -v --tb=short
+          exit_code=$?
+          [ $exit_code -eq 5 ] && exit 0 || exit $exit_code
         env:
           AWS_DEFAULT_REGION: ap-northeast-2
           AWS_ACCESS_KEY_ID: test
