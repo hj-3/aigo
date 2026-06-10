@@ -1,6 +1,7 @@
 name: CI — Infrastructure
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'infra/**'
@@ -9,6 +10,7 @@ on:
     branches: [main]
     paths:
       - 'infra/**'
+      - '.github/workflows/ci-infra.yml'
 
 permissions:
   id-token: write

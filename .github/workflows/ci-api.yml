@@ -1,6 +1,7 @@
 name: CI — API & Connectors
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - 'apps/dashboard-api/**'
@@ -15,6 +16,7 @@ on:
       - 'connectors/**'
       - 'workers/lightweight/**'
       - 'packages/**'
+      - '.github/workflows/ci-api.yml'
 
 permissions:
   contents: read
