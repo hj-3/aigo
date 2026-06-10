@@ -438,11 +438,12 @@ resource "aws_iam_policy" "github_actions_tf_infra" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Sid = "EC2Full",  Effect = "Allow", Action = ["ec2:*"],  Resource = "*" },
-      { Sid = "ECSFull",  Effect = "Allow", Action = ["ecs:*"],  Resource = "*" },
-      { Sid = "ECRFull",  Effect = "Allow", Action = ["ecr:*"],  Resource = "*" },
-      { Sid = "IAMFull",  Effect = "Allow", Action = ["iam:*"],  Resource = "*" },
-      { Sid = "KMSFull",  Effect = "Allow", Action = ["kms:*"],  Resource = "*" },
+      { Sid = "EC2Full", Effect = "Allow", Action = ["ec2:*"], Resource = "*" },
+      { Sid = "ECSFull", Effect = "Allow", Action = ["ecs:*"], Resource = "*" },
+      { Sid = "ECRFull", Effect = "Allow", Action = ["ecr:*"], Resource = "*" },
+      { Sid = "IAMFull", Effect = "Allow", Action = ["iam:*"], Resource = "*" },
+      { Sid = "KMSFull", Effect = "Allow", Action = ["kms:*"], Resource = "*" },
+      { Sid = "LambdaFull", Effect = "Allow", Action = ["lambda:*"], Resource = "*" },
     ]
   })
 }
@@ -458,13 +459,13 @@ resource "aws_iam_policy" "github_actions_tf_data" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Sid = "S3Full",             Effect = "Allow", Action = ["s3:*"],             Resource = "*" },
-      { Sid = "DynamoDBFull",       Effect = "Allow", Action = ["dynamodb:*"],       Resource = "*" },
-      { Sid = "SQSFull",            Effect = "Allow", Action = ["sqs:*"],            Resource = "*" },
-      { Sid = "SecretsFull",        Effect = "Allow", Action = ["secretsmanager:*"], Resource = "*" },
-      { Sid = "SNSFull",            Effect = "Allow", Action = ["sns:*"],            Resource = "*" },
-      { Sid = "EventsFull",         Effect = "Allow", Action = ["events:*"],         Resource = "*" },
-      { Sid = "SchemasFull",        Effect = "Allow", Action = ["schemas:*"],        Resource = "*" },
+      { Sid = "S3Full", Effect = "Allow", Action = ["s3:*"], Resource = "*" },
+      { Sid = "DynamoDBFull", Effect = "Allow", Action = ["dynamodb:*"], Resource = "*" },
+      { Sid = "SQSFull", Effect = "Allow", Action = ["sqs:*"], Resource = "*" },
+      { Sid = "SecretsFull", Effect = "Allow", Action = ["secretsmanager:*"], Resource = "*" },
+      { Sid = "SNSFull", Effect = "Allow", Action = ["sns:*"], Resource = "*" },
+      { Sid = "EventsFull", Effect = "Allow", Action = ["events:*"], Resource = "*" },
+      { Sid = "SchemasFull", Effect = "Allow", Action = ["schemas:*"], Resource = "*" },
     ]
   })
 }
@@ -480,17 +481,17 @@ resource "aws_iam_policy" "github_actions_tf_platform" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Sid = "CloudWatchFull",  Effect = "Allow", Action = ["cloudwatch:*"],   Resource = "*" },
-      { Sid = "LogsFull",        Effect = "Allow", Action = ["logs:*"],         Resource = "*" },
-      { Sid = "CognitoFull",     Effect = "Allow", Action = ["cognito-idp:*"],  Resource = "*" },
-      { Sid = "APIGatewayFull",  Effect = "Allow", Action = ["apigateway:*"],   Resource = "*" },
-      { Sid = "CloudFrontFull",  Effect = "Allow", Action = ["cloudfront:*"],   Resource = "*" },
-      { Sid = "WAFFull",         Effect = "Allow", Action = ["wafv2:*"],        Resource = "*" },
-      { Sid = "GuardDutyFull",   Effect = "Allow", Action = ["guardduty:*"],    Resource = "*" },
-      { Sid = "AOSSFull",        Effect = "Allow", Action = ["aoss:*"],         Resource = "*" },
-      { Sid = "BedrockFull",     Effect = "Allow", Action = ["bedrock:*"],      Resource = "*" },
-      { Sid = "CloudTrailFull",  Effect = "Allow", Action = ["cloudtrail:*"],   Resource = "*" },
-      { Sid = "SSMFull",         Effect = "Allow", Action = ["ssm:*"],          Resource = "*" },
+      { Sid = "CloudWatchFull", Effect = "Allow", Action = ["cloudwatch:*"], Resource = "*" },
+      { Sid = "LogsFull", Effect = "Allow", Action = ["logs:*"], Resource = "*" },
+      { Sid = "CognitoFull", Effect = "Allow", Action = ["cognito-idp:*"], Resource = "*" },
+      { Sid = "APIGatewayFull", Effect = "Allow", Action = ["apigateway:*"], Resource = "*" },
+      { Sid = "CloudFrontFull", Effect = "Allow", Action = ["cloudfront:*"], Resource = "*" },
+      { Sid = "WAFFull", Effect = "Allow", Action = ["wafv2:*"], Resource = "*" },
+      { Sid = "GuardDutyFull", Effect = "Allow", Action = ["guardduty:*"], Resource = "*" },
+      { Sid = "AOSSFull", Effect = "Allow", Action = ["aoss:*"], Resource = "*" },
+      { Sid = "BedrockFull", Effect = "Allow", Action = ["bedrock:*"], Resource = "*" },
+      { Sid = "CloudTrailFull", Effect = "Allow", Action = ["cloudtrail:*"], Resource = "*" },
+      { Sid = "SSMFull", Effect = "Allow", Action = ["ssm:*"], Resource = "*" },
     ]
   })
 }

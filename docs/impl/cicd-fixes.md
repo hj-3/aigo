@@ -580,31 +580,35 @@ terraform apply -auto-approve
 
 ---
 
-## 19. Bedrock KB / CloudTrail refresh 권한 누락 (cd-deploy)
+## 19. Bedrock KB / CloudTrail / SSM / Lambda refresh 권한 누락 (cd-deploy)
 
-**오류**
+**오류 (누적)**
 ```
-Error: reading Bedrock Agent Knowledge Base (BTLXQGMG9F)
-AccessDeniedException: not authorized to perform: bedrock:GetKnowledgeBase
-
-Error: reading CloudTrail Trail
-AccessDeniedException: not authorized to perform: cloudtrail:DescribeTrails
+bedrock:GetKnowledgeBase         → github_actions_tf_platform에 bedrock:* 없음
+cloudtrail:DescribeTrails        → cloudtrail:* 없음
+ssm:DescribeParameters           → SSMRead SID가 GetParameter/GetParameters만 허용
+lambda:GetFunctionCodeSigningConfig → LambdaDeploy SID가 일부 액션만 허용
 ```
 
 **원인**  
-`github_actions_tf_platform` 정책에 해당 서비스 wildcard 액션이 없음.  
-Terraform refresh 단계에서 리소스 읽기 실패 → apply 전체 중단.
+각 정책이 Terraform refresh 단계에서 필요한 Read/Describe 액션을 포함하지 않음.
 
 **수정**  
-`infra/terraform/global/iam/main.tf`의 `github_actions_tf_platform` 정책에 SID 추가:
-
+`github_actions_tf_platform`에 추가:
 ```hcl
 { Sid = "BedrockFull",    Effect = "Allow", Action = ["bedrock:*"],    Resource = "*" },
 { Sid = "CloudTrailFull", Effect = "Allow", Action = ["cloudtrail:*"], Resource = "*" },
 { Sid = "SSMFull",        Effect = "Allow", Action = ["ssm:*"],        Resource = "*" },
 ```
 
-(SSMFull은 `ssm:DescribeParameters` 포함 — `github_actions_core`의 `SSMRead`는 `GetParameter`/`GetParameters`만 허용하여 부족)
+`github_actions_tf_infra`에 추가:
+```hcl
+{ Sid = "LambdaFull", Effect = "Allow", Action = ["lambda:*"], Resource = "*" },
+```
+
+**추가 수정: terraform fmt 오류 (CI)**  
+수동 정렬 공백이 `terraform fmt -check` 실패 유발. `terraform fmt` 실행으로 해결.  
+이후 모든 IAM 편집 후 반드시 `terraform fmt` 실행 필요.
 
 **흐름**  
 CD step 1 (`global/iam` apply) → 정책 즉시 반영 → step 2 (`envs/prod` apply) 성공.
