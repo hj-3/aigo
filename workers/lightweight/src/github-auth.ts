@@ -1,4 +1,4 @@
-import type { Octokit } from '@octokit/rest';
+import { Octokit } from '@octokit/rest';
 import { createSign } from 'node:crypto';
 
 interface GithubAppCreds {
@@ -44,6 +44,5 @@ export async function createOctokitWithInstallation(creds: GithubAppCreds): Prom
   }
 
   const { token } = (await res.json()) as { token: string };
-  const { Octokit } = await import('@octokit/rest');
   return new Octokit({ auth: token });
 }
