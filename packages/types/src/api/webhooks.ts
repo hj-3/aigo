@@ -54,7 +54,7 @@ export interface CloudWatchAlarmEvent {
     readonly previousState: { readonly value: string };
     readonly configuration: {
       readonly description?: string;
-      readonly metrics: readonly Array<{ readonly id: string }>;
+      readonly metrics: ReadonlyArray<{ readonly id: string }>;
     };
   };
   readonly resources: readonly string[];

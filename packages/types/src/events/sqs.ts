@@ -1,6 +1,5 @@
-import type { ISODateString, JobId, OrgId, RepoId, SourceChannel, UserId } from '../common.js';
-import type { FixId } from '../dynamo/fix-request.js';
-import type { IncidentId, IncidentSource } from '../dynamo/incident.js';
+import type { FixId, ISODateString, IncidentId, JobId, OrgId, RepoId, SourceChannel, UserId } from '../common.js';
+import type { IncidentSource } from '../dynamo/incident.js';
 import type { JobType } from '../dynamo/analysis-job.js';
 
 /** Base envelope for all SQS messages */
