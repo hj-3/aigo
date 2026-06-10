@@ -45,9 +45,22 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
           terraform_wrapper: true
 
+      - name: Terraform Init (global/iam)
+        working-directory: infra/terraform/global/iam
+        run: terraform init -reconfigure
+
+      - name: Terraform Apply (global/iam)
+        working-directory: infra/terraform/global/iam
+        run: terraform apply -auto-approve -no-color -lock-timeout=5m
+        env:
+          TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+          TF_VAR_aws_region: ${{ env.AWS_REGION }}
+          TF_VAR_project: aigo
+          TF_VAR_github_org: ${{ secrets.GH_ORG }}
+
       - name: Terraform Init
         working-directory: infra/terraform/envs/prod
-        run: terraform init
+        run: terraform init -reconfigure
 
       - name: Terraform Apply
         working-directory: infra/terraform/envs/prod

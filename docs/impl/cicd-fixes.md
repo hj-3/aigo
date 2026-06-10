@@ -511,4 +511,69 @@ GitHub Actions UI에서 Lock ID를 입력해 강제 해제하는 수동 트리�
 | CI — Dashboard | FAILING | ✅ PASSING |
 | CD — Deploy | FAILING (스테이트 락) | ✅ READY (락 해제 후) |
 
-> **다음 단계**: 수동 `terraform force-unlock` 실행 → CD 재실행 → Phase H (초기 데이터 설정) 진행.
+> **다음 단계**: `global/iam` 수동 1회 apply → CD 재실행 → Phase H (초기 데이터 설정) 진행.
+
+---
+
+## Section 18: CD 파이프라인 — GitHub Actions IAM 권한 누락
+
+**날짜**: 2026-06-11  
+**워크플로우**: `cd-deploy.yml` (deploy-infra 잡)
+
+### 오류 원인
+
+`aigo-github-actions-deploy` 역할에 Terraform이 기존 리소스를 refresh하는 데 필요한
+`Describe*`/`Get*` 권한이 누락됨.
+
+**영향 서비스**: SNS, API Gateway v2, CloudWatch Logs, IAM, OpenSearch Serverless,
+CloudFront, Cognito, ECS, EventBridge, EventBridge Schemas, KMS, CloudWatch Alarms,
+S3 (버킷 정책), GuardDuty, WAFv2, EC2/VPC
+
+추가 문제: `TerraformState` SID에 `s3:DeleteObject` 미포함 →
+Terraform 1.10+ S3 네이티브 락 파일(`.tflock`) 삭제 불가 → 락 해제 실패.
+
+또한, `global/iam` 스테이트는 `infra/terraform/global/iam/`에 별도 관리되며
+CD 파이프라인이 이를 apply하지 않아 IAM 정책 변경이 반영되지 않았음.
+
+### 수정 내역
+
+**1. `infra/terraform/global/iam/main.tf`**
+
+- `TerraformState` SID에 `s3:DeleteObject` 추가 (S3 네이티브 락 파일 삭제용)
+- `aws_iam_role_policy.github_actions_tf_compute` 신규: EC2/VPC, ECS, ECR
+- `aws_iam_role_policy.github_actions_tf_app` 신규: SNS, CloudWatch, Logs, EventBridge,
+  Schemas, Cognito, API Gateway, CloudFront, WAFv2
+- `aws_iam_role_policy.github_actions_tf_iam_data` 신규: IAM, KMS(full), S3 버킷 관리,
+  DynamoDB, SQS, Secrets Manager, GuardDuty, OpenSearch Serverless
+
+**2. `.github/workflows/cd-deploy.yml`**
+
+`deploy-infra` 잡에 `global/iam` apply 선행 단계 추가:
+
+```yaml
+- name: Terraform Init (global/iam)
+  working-directory: infra/terraform/global/iam
+  run: terraform init
+
+- name: Terraform Apply (global/iam)
+  working-directory: infra/terraform/global/iam
+  run: terraform apply -auto-approve -no-color -lock-timeout=5m
+  env:
+    TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+    TF_VAR_aws_region: ap-northeast-2
+    TF_VAR_project: aigo
+    TF_VAR_github_org: ${{ secrets.GH_ORG }}
+```
+
+### 초회 부트스트랩 절차 (수동)
+
+현재 `github-actions-deploy` 역할에 IAM 권한이 없으므로,
+관리자 AWS 크레덴셜로 **1회 수동 apply** 필요:
+
+```bash
+cd infra/terraform/global/iam
+terraform init
+terraform apply -auto-approve
+```
+
+이후 역할이 IAM 권한을 가지므로 CD가 `global/iam` apply를 자동으로 처리함.

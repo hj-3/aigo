@@ -38,7 +38,7 @@ jobs:
 
       - name: Terraform Init
         working-directory: infra/terraform/envs/prod
-        run: terraform init
+        run: terraform init -reconfigure
 
       - name: Terraform Force Unlock
         working-directory: infra/terraform/envs/prod
