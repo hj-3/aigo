@@ -6,8 +6,7 @@ set -euo pipefail
 PACKAGE_NAME="$1"
 FUNCTION_NAME="$2"
 ALIAS_NAME="live"
-ERROR_RATE_THRESHOLD=5  # Auto-rollback if error rate > 5%
-CANARY_WEIGHT=10        # Start at 10% traffic
+CANARY_WEIGHT=0.1  # 10% canary traffic (AWS Lambda alias weight: 0.0–1.0)
 
 # Determine bundle path based on package location
 if [[ "$PACKAGE_NAME" == connector-* ]]; then
@@ -28,14 +27,13 @@ cd - > /dev/null
 ZIP_PATH="$(dirname "$BUNDLE_PATH")/deployment.zip"
 
 echo "🚀 Updating Lambda function code: $FUNCTION_NAME"
-PUBLISH_OUTPUT=$(aws lambda update-function-code \
+NEW_VERSION=$(aws lambda update-function-code \
   --function-name "$FUNCTION_NAME" \
   --zip-file "fileb://$ZIP_PATH" \
   --publish \
   --query 'Version' \
   --output text)
 
-NEW_VERSION="$PUBLISH_OUTPUT"
 echo "✅ Published version: $NEW_VERSION"
 
 # Get current stable version from alias
@@ -45,21 +43,33 @@ CURRENT_VERSION=$(aws lambda get-alias \
   --query 'FunctionVersion' \
   --output text 2>/dev/null || echo "$NEW_VERSION")
 
-echo "🔀 Starting canary deployment: v$CURRENT_VERSION → v$NEW_VERSION ($CANARY_WEIGHT% new)"
+# Skip canary if this is the first deployment (same version)
+if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
+  echo "✅ First deployment — promoting v$NEW_VERSION to 100% directly"
+  aws lambda update-alias \
+    --function-name "$FUNCTION_NAME" \
+    --name "$ALIAS_NAME" \
+    --function-version "$NEW_VERSION" \
+    --routing-config '{"AdditionalVersionWeights":{}}'
+  echo "🎉 Deployment complete: $FUNCTION_NAME → v$NEW_VERSION (100%)"
+  exit 0
+fi
 
-# Update alias with canary routing
+echo "🔀 Starting canary deployment: v$CURRENT_VERSION → v$NEW_VERSION ($(echo "$CANARY_WEIGHT * 100" | bc)% new)"
+
+# Update alias with canary routing (weight is a decimal 0.0–1.0)
 aws lambda update-alias \
   --function-name "$FUNCTION_NAME" \
   --name "$ALIAS_NAME" \
   --function-version "$CURRENT_VERSION" \
-  --routing-config "AdditionalVersionWeights={\"$NEW_VERSION\"=$CANARY_WEIGHT}"
+  --routing-config "{\"AdditionalVersionWeights\":{\"$NEW_VERSION\":$CANARY_WEIGHT}}"
 
 echo "⏱️  Monitoring for 60 seconds..."
 sleep 60
 
-# Check error rate during canary
+# Check error rate during canary (alarm name matches Terraform: {name}-error-rate)
 ALARM_STATE=$(aws cloudwatch describe-alarms \
-  --alarm-names "${FUNCTION_NAME}-error-rate-alarm" \
+  --alarm-names "${FUNCTION_NAME}-error-rate" \
   --query 'MetricAlarms[0].StateValue' \
   --output text 2>/dev/null || echo "OK")
 
@@ -69,7 +79,7 @@ if [ "$ALARM_STATE" = "ALARM" ]; then
     --function-name "$FUNCTION_NAME" \
     --name "$ALIAS_NAME" \
     --function-version "$CURRENT_VERSION" \
-    --routing-config '{}'
+    --routing-config '{"AdditionalVersionWeights":{}}'
   echo "✅ Rollback complete"
   exit 1
 fi
@@ -79,6 +89,6 @@ aws lambda update-alias \
   --function-name "$FUNCTION_NAME" \
   --name "$ALIAS_NAME" \
   --function-version "$NEW_VERSION" \
-  --routing-config '{}'
+  --routing-config '{"AdditionalVersionWeights":{}}'
 
 echo "🎉 Deployment complete: $FUNCTION_NAME → v$NEW_VERSION (100%)"

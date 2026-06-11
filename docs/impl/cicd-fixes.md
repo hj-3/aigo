@@ -686,3 +686,68 @@ resource "aws_ecr_lifecycle_policy" "heavy_worker" {
 output "ecr_repository_url"  { value = aws_ecr_repository.heavy_worker.repository_url }
 output "ecr_repository_name" { value = aws_ecr_repository.heavy_worker.name }
 ```
+
+---
+
+## 22. deploy-lambda: Lambda 함수명 불일치 + routing-config 형식 오류
+
+**오류**
+```
+ResourceNotFoundException: Function not found: arn:aws:lambda:...:function:aigo-connector-github
+ParamValidation: Error parsing '--routing-config': Expected '=', received '"'
+  for input: AdditionalVersionWeights={"2"=10}
+```
+
+**원인 1: 함수명 불일치**  
+CD matrix의 `function` 값이 Terraform이 생성한 이름과 다름.  
+Terraform Lambda 모듈: `${var.project}-${var.function_name}` = `aigo-github-connector`  
+CD matrix: `aigo-connector-github` (잘못된 순서)  
+`aigo-dashboard-api`만 일치했기 때문에 유일하게 업데이트 진행됨.
+
+수정 (`.github/workflows/cd-deploy.yml`):
+```yaml
+- { name: connector-github,     function: aigo-github-connector }
+- { name: connector-slack,      function: aigo-slack-connector }
+- { name: connector-aws-event,  function: aigo-aws-event-connector }
+- { name: connector-dashboard-cmd, function: aigo-dashboard-cmd-connector }
+- { name: worker-lightweight,   function: aigo-lightweight-worker }
+```
+
+**원인 2: routing-config 가중치 형식 오류**  
+`AdditionalVersionWeights={"VERSION"=WEIGHT}` — AWS CLI shorthand에서 인용부호 미지원.  
+Lambda alias 가중치는 0.0–1.0 범위의 소수 (10% → 0.1). 정수 10은 범위 초과.
+
+수정 (`scripts/deploy-lambda.sh`):
+- `CANARY_WEIGHT=0.1` (소수로 변경)
+- `--routing-config "{\"AdditionalVersionWeights\":{\"$NEW_VERSION\":$CANARY_WEIGHT}}"` (JSON 형식)
+- `--routing-config '{"AdditionalVersionWeights":{}}'` (clear 시)
+- 알람명도 수정: `${FUNCTION_NAME}-error-rate-alarm` → `${FUNCTION_NAME}-error-rate` (Terraform 실제명 일치)
+- 첫 배포 감지 (`CURRENT_VERSION == NEW_VERSION`) 시 canary 건너뛰고 100% 즉시 배포
+
+---
+
+## 23. deploy-heavy-worker: ECS register-task-definition 읽기 전용 필드 오류
+
+**오류**
+```
+Unknown parameter in input: "taskDefinitionArn", "revision", "status",
+  "requiresAttributes", "compatibilities", "registeredAt", "registeredBy"
+```
+
+**원인**  
+`describe-task-definition`의 출력에는 읽기 전용 메타데이터 필드가 포함됨.  
+이를 그대로 `register-task-definition`에 전달하면 파라미터 검증 실패.
+
+**수정** (`.github/workflows/cd-deploy.yml`):
+```bash
+aws ecs describe-task-definition \
+  --task-definition aigo-heavy-worker \
+  --query taskDefinition \
+  --output json \
+  | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+            .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+        | .containerDefinitions[0].image = "ECR_REGISTRY/aigo-worker-heavy:SHA"' \
+  > new-task-def.json
+
+aws ecs register-task-definition --cli-input-json file://new-task-def.json
+```

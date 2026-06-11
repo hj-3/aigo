@@ -113,11 +113,11 @@ jobs:
       fail-fast: false
       matrix:
         package:
-          - { name: connector-github, function: aigo-connector-github }
-          - { name: connector-slack, function: aigo-connector-slack }
-          - { name: connector-aws-event, function: aigo-connector-aws-event }
-          - { name: connector-dashboard-cmd, function: aigo-connector-dashboard-cmd }
-          - { name: worker-lightweight, function: aigo-worker-lightweight }
+          - { name: connector-github, function: aigo-github-connector }
+          - { name: connector-slack, function: aigo-slack-connector }
+          - { name: connector-aws-event, function: aigo-aws-event-connector }
+          - { name: connector-dashboard-cmd, function: aigo-dashboard-cmd-connector }
+          - { name: worker-lightweight, function: aigo-lightweight-worker }
           - { name: dashboard-api, function: aigo-dashboard-api }
     steps:
       - uses: actions/checkout@v4
@@ -182,13 +182,14 @@ jobs:
 
       - name: Update ECS task definition
         run: |
+          # Strip read-only fields that register-task-definition does not accept
           aws ecs describe-task-definition \
             --task-definition aigo-heavy-worker \
-            --query taskDefinition > task-def.json
-
-          # Update image tag in task definition
-          cat task-def.json | \
-            jq '.containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/aigo-worker-heavy:${{ github.sha }}"' \
+            --query taskDefinition \
+            --output json \
+            | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+                  | .containerDefinitions[0].image = "${{ env.ECR_REGISTRY }}/aigo-worker-heavy:${{ github.sha }}"' \
             > new-task-def.json
 
           aws ecs register-task-definition --cli-input-json file://new-task-def.json
