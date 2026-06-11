@@ -97,3 +97,19 @@ resource "aws_apigatewayv2_route" "routes" {
   authorization_type = startswith(each.key, "POST /webhooks") ? "NONE" : "JWT"
   authorizer_id      = startswith(each.key, "POST /webhooks") ? null : aws_apigatewayv2_authorizer.cognito.id
 }
+
+# Allow API Gateway to invoke each unique Lambda alias
+locals {
+  unique_lambda_arns = toset(values(var.lambda_arns))
+}
+
+resource "aws_lambda_permission" "api_gateway" {
+  for_each = local.unique_lambda_arns
+
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = element(split(":", each.value), 6)
+  qualifier     = element(split(":", each.value), 7)
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}

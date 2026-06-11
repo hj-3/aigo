@@ -943,6 +943,52 @@ terraform import 'aws_route53_record.app_aaaa' 'Z05689142NE68H3D5V1NG_app.seolph
 
 ---
 
+## API Gateway → Lambda 권한 없음 (500 Internal Server Error)
+
+**오류**  
+API Gateway access log:
+```json
+{"integrationError":"The IAM role configured on the integration or API Gateway doesn't have permissions to call the integration.","status":"500"}
+```
+
+Lambda resource policy 확인:
+```bash
+aws lambda get-policy --function-name aigo-dashboard-api
+# Error: ResourceNotFoundException — 정책이 아예 존재하지 않음
+```
+
+**원인**  
+`modules/api-gateway/main.tf`에 `aws_lambda_permission` 리소스가 없었음.  
+API Gateway HTTP API가 Lambda를 invoke하려면 Lambda 리소스 기반 정책에 `lambda:InvokeFunction` 허가가 있어야 하며, 이는 IAM 역할 권한과는 별개다.
+
+**수정** — `infra/terraform/modules/api-gateway/main.tf`
+
+```hcl
+# Allow API Gateway to invoke each unique Lambda alias
+locals {
+  unique_lambda_arns = toset(values(var.lambda_arns))
+}
+
+resource "aws_lambda_permission" "api_gateway" {
+  for_each = local.unique_lambda_arns
+
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = element(split(":", each.value), 6)  # 함수명 추출
+  qualifier     = element(split(":", each.value), 7)  # alias 추출 (예: "live")
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.main.execution_arn}/*/*"
+}
+```
+
+**포인트**:
+- `var.lambda_arns`는 `map(string)`으로 여러 route가 동일 Lambda ARN을 참조할 수 있음 → `toset(values(...))` 로 중복 제거
+- `function_name`에 전체 ARN 대신 함수명, `qualifier`에 alias 분리 → Lambda 정책에 alias 레벨 권한 적용
+- `source_arn = execution_arn/*/*` → stage/method 와일드카드로 모든 route 허용
+- 기존 정책이 없으므로 import 불필요, `terraform apply` 시 신규 생성
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.
