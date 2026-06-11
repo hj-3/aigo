@@ -612,3 +612,77 @@ lambda:GetFunctionCodeSigningConfig → LambdaDeploy SID가 일부 액션만 허
 
 **흐름**  
 CD step 1 (`global/iam` apply) → 정책 즉시 반영 → step 2 (`envs/prod` apply) 성공.
+
+---
+
+## 20. deploy-lambda: @aigo/logger, @aigo/aws-clients 번들링 실패
+
+**오류**
+```
+Error: Could not resolve "@aigo/logger"
+  node_modules/@aigo/logger/package.json: "import": "./dist/index.js" 파일 없음
+Error: Could not resolve "@aigo/aws-clients"
+  (동일 패턴)
+```
+
+**원인**  
+`packages/logger`, `packages/aws-clients`, `packages/types`는 내부 워크스페이스 패키지.  
+esbuild 번들링 시 `node_modules/@aigo/logger/dist/index.js`를 찾지만, `pnpm install`만으로는  
+TypeScript 소스가 컴파일되지 않아 `dist/` 디렉토리가 없음.  
+`ci-api.yml`은 이미 `pnpm -r --filter="{packages/**}" build` 단계가 있어 통과.  
+CD `deploy-api` job은 해당 단계 누락.
+
+**수정**  
+`.github/workflows/cd-deploy.yml` `deploy-api` job의 Install/bundle 단계 분리:
+
+```yaml
+- name: Install dependencies
+  run: pnpm install --frozen-lockfile
+
+- name: Build shared packages
+  run: pnpm -r --filter="{packages/**}" build
+
+- name: Bundle
+  run: pnpm -F "@aigo/${{ matrix.package.name }}" bundle
+```
+
+---
+
+## 21. deploy-heavy-worker: ECR 리포지토리 미존재
+
+**오류**
+```
+ERROR: failed to push ***.dkr.ecr.ap-northeast-2.amazonaws.com/aigo-worker-heavy:...
+unknown: The repository with name 'aigo-worker-heavy' does not exist in the registry
+```
+
+**원인**  
+ECS 모듈(`modules/ecs/main.tf`)에 `aws_ecr_repository` 리소스가 없음.  
+Terraform이 ECS 클러스터와 태스크 정의만 생성하고 ECR 리포지토리는 생성하지 않음.
+
+**수정**  
+`infra/terraform/modules/ecs/main.tf`에 ECR 리포지토리 + lifecycle 정책 추가:
+
+```hcl
+resource "aws_ecr_repository" "heavy_worker" {
+  name                 = "${local.p}-worker-heavy"
+  image_tag_mutability = "MUTABLE"
+  image_scanning_configuration { scan_on_push = true }
+  encryption_configuration    { encryption_type = "AES256" }
+  tags = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "heavy_worker" {
+  repository = aws_ecr_repository.heavy_worker.name
+  policy = jsonencode({ rules = [{ rulePriority=1, description="Keep last 10 images", ... }] })
+}
+```
+
+**암호화 선택**: KMS 대신 AES256 — ECR KMS 암호화는 key policy에 `ecr.amazonaws.com` principal  
+추가가 필요하나 기존 KMS 키에 없어 KMS 정책 충돌 회피.
+
+`modules/ecs/outputs.tf`에 출력값 추가:
+```hcl
+output "ecr_repository_url"  { value = aws_ecr_repository.heavy_worker.repository_url }
+output "ecr_repository_name" { value = aws_ecr_repository.heavy_worker.name }
+```

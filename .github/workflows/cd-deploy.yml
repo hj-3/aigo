@@ -128,10 +128,14 @@ jobs:
           node-version-file: '.nvmrc'
       - uses: pnpm/action-setup@v4
 
-      - name: Install and bundle
-        run: |
-          pnpm install --frozen-lockfile
-          pnpm -F "@aigo/${{ matrix.package.name }}" bundle
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm -r --filter="{packages/**}" build
+
+      - name: Bundle
+        run: pnpm -F "@aigo/${{ matrix.package.name }}" bundle
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4

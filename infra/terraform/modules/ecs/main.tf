@@ -30,6 +30,41 @@ resource "aws_ecs_cluster_capacity_providers" "main" {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
+# ECR Repository (Heavy Worker image)
+# ──────────────────────────────────────────────────────────────────────────────
+resource "aws_ecr_repository" "heavy_worker" {
+  name                 = "${local.p}-worker-heavy"
+  image_tag_mutability = "MUTABLE"
+
+  image_scanning_configuration {
+    scan_on_push = true
+  }
+
+  encryption_configuration {
+    encryption_type = "AES256"
+  }
+
+  tags = local.common_tags
+}
+
+resource "aws_ecr_lifecycle_policy" "heavy_worker" {
+  repository = aws_ecr_repository.heavy_worker.name
+
+  policy = jsonencode({
+    rules = [{
+      rulePriority = 1
+      description  = "Keep last 10 images"
+      selection = {
+        tagStatus   = "any"
+        countType   = "imageCountMoreThan"
+        countNumber = 10
+      }
+      action = { type = "expire" }
+    }]
+  })
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Heavy Worker Task Definition (Python ECS Fargate — repo clone, test, patch)
 # ──────────────────────────────────────────────────────────────────────────────
 resource "aws_cloudwatch_log_group" "heavy_worker" {
