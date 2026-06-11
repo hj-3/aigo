@@ -97,11 +97,11 @@ github_actions_role_arn = "arn:aws:iam::XXXXXXXXXXXX:role/aigo-github-actions-de
    - App 설치: **Install App** → 대상 Organization 선택
    - 설치 후 URL의 숫자 = Installation ID 메모
 
-- [ ] GitHub App 생성 완료
-- [ ] App ID: `___________`
-- [ ] Installation ID: `___________`
-- [ ] Private Key `.pem` 파일 다운로드 완료
-- [ ] Webhook Secret 메모 완료 (터미널에서 생성한 값)
+- [x] GitHub App 생성 완료
+- [x] App ID: (Secrets Manager에 저장됨)
+- [x] Installation ID: (Secrets Manager에 저장됨)
+- [x] Private Key `.pem` 파일 다운로드 완료
+- [x] Webhook Secret 메모 완료 (Secrets Manager에 저장됨)
 
 ### C-2. Slack App 등록
 
@@ -114,9 +114,9 @@ github_actions_role_arn = "arn:aws:iam::XXXXXXXXXXXX:role/aigo-github-actions-de
 6. **Slash Commands** → 각각 생성 (URL은 Phase F에서 업데이트):
    - `/approve`, `/reject`, `/investigate`
 
-- [ ] Slack App 생성 완료
-- [ ] Bot Token (`xoxb-...`) 메모 완료
-- [ ] Signing Secret 메모 완료
+- [x] Slack App 생성 완료
+- [x] Bot Token (`xoxb-...`) 메모 완료
+- [x] Signing Secret 메모 완료
 
 ### C-3. Secrets Manager 초기화
 
@@ -146,8 +146,8 @@ aws secretsmanager create-secret \
   }'
 ```
 
-- [ ] `aigo/github-app` 시크릿 생성 완료
-- [ ] `aigo/slack` 시크릿 생성 완료
+- [x] `aigo/github-app` 시크릿 생성 완료
+- [x] `aigo/slack` 시크릿 생성 완료
 
 ---
 
@@ -188,9 +188,9 @@ cognito_client_id            = "XXXXXXXXXXXXXXXXXXXXXXXXXX"
 cognito_domain               = "aigo-XXXXXXXX.auth.ap-northeast-2.amazoncognito.com"
 ```
 
-- [ ] `terraform.tfvars` 작성 완료
-- [ ] `terraform apply` 성공
-- [ ] 모든 output 값 메모 완료
+- [x] `terraform.tfvars` 작성 완료
+- [x] `terraform apply` 성공
+- [x] 모든 output 값 메모 완료 (api_endpoint, cloudfront_domain, cognito_* 확인)
 
 ---
 
@@ -209,7 +209,7 @@ GitHub 리포지토리 → **Settings** → **Secrets and variables** → **Acti
 | `DASHBOARD_BUCKET_NAME` | Phase D output의 `dashboard_bucket_name` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | Phase D output의 `cloudfront_distribution_id` |
 
-- [ ] 8개 GitHub Secrets 모두 설정 완료
+- [x] 8개 GitHub Secrets 모두 설정 완료
 
 ---
 
@@ -260,7 +260,7 @@ https://API_GATEWAY_URL/slack/events
 ./scripts/deploy-agent.sh orchestrator
 ```
 
-- [ ] 7개 Agent 배포 완료
+- [x] 7개 Agent 배포 완료 (Terraform bedrock_agentcore 모듈로 자동 배포, 상태: PREPARED)
 
 ### G-2. CD 파이프라인 실행
 
@@ -431,8 +431,8 @@ aws cognito-idp admin-get-user \
 # → "CONFIRMED" 이어야 함
 ```
 
-- [ ] 첫 OWNER 사용자 생성 완료 (UserStatus: CONFIRMED)
-- [ ] OWNER 그룹 추가 완료
+- [x] 첫 OWNER 사용자 생성 완료 (UserStatus: CONFIRMED) — hyjoon333@gmail.com
+- [x] OWNER 그룹 추가 완료
 
 ---
 
@@ -474,7 +474,7 @@ aws dynamodb get-item \
 # → "Your Organization"
 ```
 
-- [ ] Organizations 초기 레코드 생성 완료
+- [x] Organizations 초기 레코드 생성 완료 (org-001, AIGOadmin)
 
 ---
 
@@ -564,27 +564,38 @@ aws bedrock-agent list-ingestion-jobs \
 # COMPLETE 상태 확인
 ```
 
-- [ ] KB 문서 작성 완료 (카테고리별 최소 1개)
-- [ ] S3 `aigo-kb` 업로드 완료
-- [ ] Bedrock 인제스션 Job 실행 완료 (상태: COMPLETE)
+- [x] KB 문서 작성 완료 (4개 카테고리 × 최소 2개 문서)
+- [x] S3 `aigo-kb` 업로드 완료
+- [x] Bedrock 인제스션 Job 실행 완료 (상태: COMPLETE, 4개 DS 모두 완료)
 
 ---
 
 ## Phase I — 배포 검증
 
+> **현재 상태 (2026-06-11):** I-1, I-4 PASSING. I-3 수동 확인 필요. I-2는 Phase F (Webhook URL 업데이트) 완료 후 가능.
+
 ### I-1. 헬스체크
 
 ```bash
-API_URL="https://API_GATEWAY_URL"
+API_URL="https://jxvucbg4c0.execute-api.ap-northeast-2.amazonaws.com/prod"
 
 # API Gateway 헬스체크
 curl -s "$API_URL/health" | jq .
+# → {"status":"ok"}
 
 # Dashboard 접근
-echo "Dashboard URL: https://CLOUDFRONT_DOMAIN"
+echo "Dashboard URL: https://d14fywc3dbqqf3.cloudfront.net"
 ```
 
+> **수정 이력:** `/health` 라우트가 JWT 보호 대상이었음 → `AuthorizationType: NONE` 으로 수정 (`modules/api-gateway/main.tf`).  
+> `/health` 핸들러 누락 → `apps/dashboard-api/src/index.ts`에 `app.get('/health', ...)` 추가.
+
+- [x] API Gateway `/health` → `{"status":"ok"}` (200)
+- [x] CloudFront Dashboard → HTTP 200
+
 ### I-2. GitHub Webhook 테스트
+
+> **전제:** Phase F (GitHub App Webhook URL 업데이트) 완료 필요.
 
 테스트 리포지토리에 PR을 생성하고 다음을 확인:
 - [ ] GitHub App이 Webhook을 수신 (GitHub App → Advanced → Recent Deliveries 확인)
@@ -594,8 +605,13 @@ echo "Dashboard URL: https://CLOUDFRONT_DOMAIN"
 
 ### I-3. 대시보드 로그인 테스트
 
-- [ ] `https://CLOUDFRONT_DOMAIN` 접근 → Cognito Hosted UI 리다이렉트 확인
-- [ ] Phase H-1에서 생성한 계정으로 로그인 성공
+```
+Dashboard URL: https://d14fywc3dbqqf3.cloudfront.net
+Login: hyjoon333@gmail.com (OWNER, org-001)
+```
+
+- [ ] `https://d14fywc3dbqqf3.cloudfront.net` 접근 → Cognito Hosted UI 리다이렉트 확인
+- [ ] hyjoon333@gmail.com 계정으로 로그인 성공
 - [ ] Dashboard 메인 화면 정상 표시
 
 ### I-4. CloudWatch 알람 확인
@@ -609,7 +625,7 @@ aws cloudwatch describe-alarms \
   --region ap-northeast-2
 ```
 
-- [ ] 모든 알람 `OK` 상태 확인
+- [x] 모든 알람 `OK` 상태 확인 (15개 알람 전체 OK)
 
 ---
 
@@ -617,15 +633,18 @@ aws cloudwatch describe-alarms \
 
 - [x] Phase A — Terraform 상태 저장소 생성
 - [x] Phase B — Global IAM (GitHub OIDC) 배포
-- [ ] Phase C — GitHub App + Slack App 등록 + Secrets Manager 초기화
+- [x] Phase C — GitHub App + Slack App 등록 + Secrets Manager 초기화
 - [x] Phase D — 인프라 Terraform apply (CD auto-apply)
 - [x] Phase E — GitHub Secrets 설정
-- [ ] Phase F — Webhook/Slash Command URL 업데이트
+- [ ] Phase F — Webhook/Slash Command URL 업데이트 (미완료 — I-2 웹훅 테스트 전 필요)
+- [x] Phase G-1 — Bedrock Agent 7개 배포 (Terraform으로 자동 완료, 상태: PREPARED)
 - [x] Phase G-2 — CD 파이프라인 (Lambda + ECS + Dashboard) PASSING
-- [ ] Phase G-1 — Bedrock Agent 7개 배포
 - [ ] Phase G-3 — 커스텀 도메인 연결 (선택)
-- [ ] Phase H — 초기 데이터 설정 (Cognito 사용자, Organization, KB 문서)
-- [ ] Phase I — 배포 검증
+- [x] Phase H — 초기 데이터 설정 (Cognito 사용자, Organization, KB 문서)
+- [x] Phase I-1 — API /health + CloudFront 헬스체크 PASSING
+- [ ] Phase I-2 — GitHub Webhook 테스트 (Phase F 완료 후)
+- [ ] Phase I-3 — Dashboard 로그인 테스트 (브라우저 수동 확인 필요)
+- [x] Phase I-4 — CloudWatch 알람 15개 전체 OK
 
 ---
 

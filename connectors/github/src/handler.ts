@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { ddbPut, ddbGet, sqsSendMessage, getSecret, Config } from '@aigo/aws-clients';
+import { ddbPut, ddbGet, sqsSendMessage, getSecretJson, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { GitHubPRWebhookPayload } from '@aigo/types';
 import { validateGitHubSignature, extractRawBody } from './validator.js';
@@ -33,7 +33,7 @@ export async function handleGitHubWebhook(
 
   let credentials: GithubAppCredentials;
   try {
-    credentials = await getSecret(githubSecretArn) as unknown as GithubAppCredentials;
+    credentials = await getSecretJson<GithubAppCredentials>(githubSecretArn);
   } catch (err) {
     logger.error('Failed to fetch GitHub secret', { error: String(err) });
     return { statusCode: 500, body: '{"error":"secret_fetch_failed"}' };

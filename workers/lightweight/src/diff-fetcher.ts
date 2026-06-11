@@ -1,4 +1,4 @@
-import { getSecret } from '@aigo/aws-clients';
+import { getSecretJson } from '@aigo/aws-clients';
 import { getLogger } from '@aigo/logger';
 import { createOctokitWithInstallation } from './github-auth.js';
 
@@ -29,11 +29,11 @@ export async function fetchAndStorePrDiff(
   _orgId: string,
 ): Promise<FetchedDiff> {
   const githubSecretArn = process.env['GITHUB_SECRET_ARN']!;
-  const credentials = await getSecret(githubSecretArn) as unknown as {
+  const credentials = await getSecretJson<{
     appId: string;
     privateKey: string;
     installationId: string;
-  };
+  }>(githubSecretArn);
 
   const octokit = await createOctokitWithInstallation(credentials);
   const [owner, repo] = repoFullName.split('/') as [string, string];

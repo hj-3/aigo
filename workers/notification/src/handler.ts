@@ -1,5 +1,5 @@
 import type { SQSRecord } from 'aws-lambda';
-import { getSecret, getSecretJson } from '@aigo/aws-clients';
+import { getSecretJson } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { NotificationQueueMessage } from '@aigo/types';
 import { sendSlackMessage, buildBlocks } from './slack.js';
@@ -38,7 +38,7 @@ export async function processRecord(record: SQSRecord): Promise<void> {
   // Slack: send if a channel is specified
   const channel = slackChannel ?? '';
   if (channel) {
-    const botToken = await getSecret(SLACK_SECRET_ARN);
+    const { botToken } = await getSecretJson<{ botToken: string }>(SLACK_SECRET_ARN);
     const blocks = buildBlocks(notificationType, payload);
     const text = buildFallbackText(notificationType, payload);
     await sendSlackMessage(channel, blocks, text, botToken);

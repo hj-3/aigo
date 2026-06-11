@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { getSecret, sqsSendMessage, Config } from '@aigo/aws-clients';
+import { getSecretJson, sqsSendMessage, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import { validateSlackSignature, parseSlashCommandBody } from './validator.js';
 import { randomUUID } from 'node:crypto';
@@ -47,7 +47,7 @@ export async function handleSlackCommand(
 
   let credentials: SlackCredentials;
   try {
-    credentials = await getSecret(slackSecretArn) as unknown as SlackCredentials;
+    credentials = await getSecretJson<SlackCredentials>(slackSecretArn);
   } catch {
     return jsonResponse(500, { error: 'secret_fetch_failed' });
   }

@@ -24,6 +24,8 @@ app.use('*', cors({
   maxAge: 86400,
 }));
 
+app.get('/health', (c) => c.json({ status: 'ok' }, 200));
+
 app.route('/dashboard', dashboardRouter);
 app.route('/reports', reportsRouter);
 app.route('/incidents', incidentsRouter);
