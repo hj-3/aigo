@@ -888,6 +888,61 @@ terraform import 'module.api_gateway.aws_apigatewayv2_route.routes["GET /reposit
 
 ---
 
+## 29. CloudFront alias 초기화 — acm_certificate_arn 모듈 미전달
+
+**증상**  
+Terraform apply 후 CloudFront에서 `app.seolphung.com` alias가 사라지고 기본 인증서로 복원됨.
+
+**원인**  
+`modules/cloudfront/main.tf`:
+```hcl
+aliases = (var.domain_name != "" && var.acm_certificate_arn != "") ? ["app.${var.domain_name}"] : null
+```
+`envs/prod/main.tf`의 `module "cloudfront"` 호출에 `acm_certificate_arn`이 누락되어  
+변수 기본값 `""` 적용 → `aliases = null` → apply 시마다 alias 제거.
+
+Route53 레코드와 ACM 인증서도 Terraform 외부에서 수동 관리 중 — 표준에서 벗어남.
+
+**수정** (`envs/prod/main.tf`):
+```hcl
+# ACM 인증서 참조 (us-east-1 전용 — data source로 참조가 표준)
+data "aws_acm_certificate" "wildcard" {
+  provider    = aws.us_east_1
+  domain      = "*.seolphung.com"
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+# Route53 호스팅 존 참조 (도메인 등록 시 생성 — data source로 참조가 표준)
+data "aws_route53_zone" "main" {
+  name         = "seolphung.com."
+  private_zone = false
+}
+
+# CloudFront 모듈에 cert ARN 전달
+module "cloudfront" {
+  ...
+  acm_certificate_arn = data.aws_acm_certificate.wildcard.arn
+}
+
+# Route53 레코드 Terraform 관리
+resource "aws_route53_record" "app_a"    { ... }
+resource "aws_route53_record" "app_aaaa" { ... }
+```
+
+기존 Route53 레코드 import (충돌 방지):
+```bash
+terraform import 'aws_route53_record.app_a'    'Z05689142NE68H3D5V1NG_app.seolphung.com_A'
+terraform import 'aws_route53_record.app_aaaa' 'Z05689142NE68H3D5V1NG_app.seolphung.com_AAAA'
+```
+
+**원칙**:
+- ACM cert(us-east-1), Route53 hosted zone(도메인 등록 1회): `data` 소스로 참조
+- Route53 record, CloudFront alias 연결: `resource`로 Terraform 관리
+- 모듈에 필요한 모든 변수를 명시적으로 전달해야 한다 (기본값 의존 금지)
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.
