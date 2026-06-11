@@ -1,5 +1,19 @@
 data "aws_caller_identity" "current" {}
 
+# ACM wildcard certificate (*.seolphung.com) — issued in us-east-1 for CloudFront
+data "aws_acm_certificate" "wildcard" {
+  provider    = aws.us_east_1
+  domain      = "*.seolphung.com"
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+# Route53 hosted zone — created at domain registration, referenced only
+data "aws_route53_zone" "main" {
+  name         = "seolphung.com."
+  private_zone = false
+}
+
 locals {
   account_id = var.aws_account_id != "" ? var.aws_account_id : data.aws_caller_identity.current.account_id
   common_tags = {
@@ -362,13 +376,39 @@ module "ecs" {
 # CloudFront
 # ──────────────────────────────────────────────────────────────────────────────
 module "cloudfront" {
-  source              = "../../modules/cloudfront"
-  project             = var.project
-  frontend_bucket_id  = module.s3.bucket_ids["frontend"]
-  frontend_bucket_arn = module.s3.bucket_arns["frontend"]
-  api_domain          = replace(module.api_gateway.stage_invoke_url, "https://", "")
-  domain_name         = var.domain_name
-  cognito_domain      = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
+  source               = "../../modules/cloudfront"
+  project              = var.project
+  frontend_bucket_id   = module.s3.bucket_ids["frontend"]
+  frontend_bucket_arn  = module.s3.bucket_arns["frontend"]
+  api_domain           = replace(module.api_gateway.stage_invoke_url, "https://", "")
+  domain_name          = var.domain_name
+  acm_certificate_arn  = data.aws_acm_certificate.wildcard.arn
+  cognito_domain       = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
+}
+
+# Route53 — app.seolphung.com → CloudFront (A + AAAA alias)
+resource "aws_route53_record" "app_a" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "app.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = module.cloudfront.distribution_domain
+    zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "app_aaaa" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "app.${var.domain_name}"
+  type    = "AAAA"
+
+  alias {
+    name                   = module.cloudfront.distribution_domain
+    zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
