@@ -796,3 +796,47 @@ to perform: route53:ListHostedZones
 ```
 
 **원칙**: 새 data source(Route53, ACM 등) 추가 시 `global/iam`의 GitHub Actions 정책에 읽기 권한을 함께 추가한다.
+
+---
+
+## API Gateway HTTP API → Lambda: rawPath에 stage prefix 포함 문제
+
+**오류**  
+`aws_lambda_permission` 추가 후 Lambda가 실제로 invoke되기 시작했으나 모든 API 라우트에서 404 반환.
+
+**원인**  
+API Gateway HTTP API에서 named stage(`prod`)를 사용할 때, Lambda에 전달되는 `rawPath`에 stage 이름이 포함된다:
+```
+GET /reports → rawPath = /prod/reports
+```
+Hono 라우터는 `/reports`로 등록되어 있어 `/prod/reports`를 매칭하지 못하고 `app.notFound` → 404 반환.
+
+참고: `$default` stage는 path prefix 없이 전달됨 (`rawPath = /reports`).
+
+**수정** (`apps/dashboard-api/src/index.ts`):
+```typescript
+export const handler = async (event: APIGatewayProxyEventV2, context: Context) => {
+  const stage = event.requestContext?.stage;
+  if (stage && stage !== '$default') {
+    const prefix = `/${stage}`;
+    if (event.rawPath?.startsWith(prefix)) {
+      event = {
+        ...event,
+        rawPath: event.rawPath.slice(prefix.length) || '/',
+        requestContext: {
+          ...event.requestContext,
+          http: {
+            ...event.requestContext.http,
+            path: event.requestContext.http.path?.startsWith(prefix)
+              ? event.requestContext.http.path.slice(prefix.length) || '/'
+              : event.requestContext.http.path,
+          },
+        },
+      };
+    }
+  }
+  return handle(app)(event, context);
+};
+```
+
+**원칙**: Hono + API Gateway HTTP API 조합에서 named stage를 사용하면 반드시 stage prefix를 제거해야 한다. `$default` stage를 사용하면 이 문제가 없다.

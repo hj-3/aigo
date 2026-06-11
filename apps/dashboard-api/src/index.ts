@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { handle } from 'hono/aws-lambda';
+import type { APIGatewayProxyEventV2, Context } from 'aws-lambda';
 import { reportsRouter } from './routes/reports.js';
 import { incidentsRouter } from './routes/incidents.js';
 import { repositoriesRouter } from './routes/repositories.js';
@@ -37,4 +38,27 @@ app.onError((err, c) => {
   return c.json({ error: 'INTERNAL_ERROR', message: 'An unexpected error occurred' }, 500);
 });
 
-export const handler = handle(app);
+// API Gateway HTTP API sends rawPath as /stage/path (e.g. /prod/reports).
+// Strip the stage prefix so Hono routing works correctly.
+export const handler = async (event: APIGatewayProxyEventV2, context: Context) => {
+  const stage = event.requestContext?.stage;
+  if (stage && stage !== '$default') {
+    const prefix = `/${stage}`;
+    if (event.rawPath?.startsWith(prefix)) {
+      event = {
+        ...event,
+        rawPath: event.rawPath.slice(prefix.length) || '/',
+        requestContext: {
+          ...event.requestContext,
+          http: {
+            ...event.requestContext.http,
+            path: event.requestContext.http.path?.startsWith(prefix)
+              ? event.requestContext.http.path.slice(prefix.length) || '/'
+              : event.requestContext.http.path,
+          },
+        },
+      };
+    }
+  }
+  return handle(app)(event, context);
+};
