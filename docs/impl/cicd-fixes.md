@@ -811,3 +811,53 @@ CloudFront distribution ARN을 KMS 모듈에서 참조하면 KMS → CF → S3 �
 동일 계정 내 모든 distribution으로 범위 제한(계정 수준 최소 권한).
 
 **원칙**: OAC + SSE-KMS 조합은 버킷 정책 + KMS 키 정책 두 곳 모두 CloudFront 허용 필요.
+
+---
+
+## 26. Dashboard "Auth UserPool not configured" — VITE_COGNITO_* 미전달
+
+**증상**  
+CloudFront 도메인 접속 시 로그인 화면에 "Auth UserPool not configured" 표시.
+
+**원인**  
+CD `deploy-dashboard` 빌드 스텝에 `VITE_API_URL`만 전달되고 Cognito 관련 env var 미포함:
+- `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID`, `VITE_COGNITO_DOMAIN`
+- `VITE_REDIRECT_SIGN_IN`, `VITE_REDIRECT_SIGN_OUT`
+
+Vite 빌드 시 `import.meta.env.VITE_*` 값이 `undefined`로 번들링되어 Amplify가 초기화 실패.
+
+**수정**
+- `deploy-infra` 잡 마지막에 `Read Terraform outputs` 스텝 추가 → `terraform output -raw`로 4개 값 읽어 `GITHUB_OUTPUT` 저장
+- `deploy-infra` 잡 outputs 선언: `cognito_user_pool_id`, `cognito_client_id`, `cognito_domain`, `cloudfront_domain`
+- `deploy-dashboard` 빌드 env에 `needs.deploy-infra.outputs.*` 참조하여 `VITE_COGNITO_*`와 `VITE_REDIRECT_*` 주입
+- `envs/prod/outputs.tf`에 `cognito_domain` 출력 추가
+- `cloudfront` 모듈에 `cognito_domain` 변수 추가 → `envs/prod/main.tf`에서 전달
+
+**원칙**: Vite 빌드 타임 env var(`VITE_*`)는 빌드 스텝 `env:` 블록에 명시적으로 전달해야 한다. Terraform 출력값은 `terraform output -raw`로 읽어 `GITHUB_OUTPUT`에 저장 후 job outputs로 전파한다.
+
+---
+
+## 27. CSP 와일드카드 + Google Fonts 차단
+
+**증상**
+```
+The source list for Content Security Policy 'connect-src' contains an invalid source:
+  'https://cognito-idp.*.amazonaws.com'
+  'https://*.execute-api.*.amazonaws.com'
+style-src violates CSP: 'https://fonts.googleapis.com/...'
+```
+
+**원인**  
+CSP는 호스트명 중간 와일드카드를 지원하지 않음:
+- `cognito-idp.*.amazonaws.com` → 호스트명 중간 `*` → 무효
+- `*.execute-api.*.amazonaws.com` → 복수 `*` → 무효
+- `style-src`에 `https://fonts.googleapis.com` 미포함
+
+**수정** (`modules/cloudfront/main.tf` CSP 문자열):
+- `cognito-idp.*.amazonaws.com` → `cognito-idp.ap-northeast-2.amazonaws.com` (리전 고정)
+- `*.execute-api.*.amazonaws.com` → `*.execute-api.ap-northeast-2.amazonaws.com` (선두 `*`만 허용)
+- Cognito 호스팅 UI 도메인 추가: `https://${var.cognito_domain}`
+- `style-src`에 `https://fonts.googleapis.com` 추가
+- `font-src 'self' https://fonts.gstatic.com` 추가
+
+CSP 와일드카드 규칙: 호스트명 시작(`*.example.com`)만 허용, 중간 또는 복수 와일드카드 불가.
