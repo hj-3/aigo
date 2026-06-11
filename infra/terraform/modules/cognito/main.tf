@@ -73,8 +73,9 @@ resource "aws_cognito_user_pool" "main" {
 }
 
 resource "aws_cognito_user_pool_domain" "main" {
-  domain       = var.domain_prefix
-  user_pool_id = aws_cognito_user_pool.main.id
+  domain                = var.domain_prefix
+  user_pool_id          = aws_cognito_user_pool.main.id
+  managed_login_version = 2
 }
 
 resource "aws_cognito_managed_login_branding" "main" {
