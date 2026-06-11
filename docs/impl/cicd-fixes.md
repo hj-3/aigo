@@ -754,67 +754,7 @@ aws ecs register-task-definition --cli-input-json file://new-task-def.json
 
 ---
 
-## 24. CloudFront 403 Access Denied — S3 버킷 정책 충돌
-
-**증상**  
-CloudFront 도메인(`*.cloudfront.net`) 접속 시 `403 Access Denied` 응답.
-
-**원인**  
-`aigo-frontend` S3 버킷에 두 개의 Terraform 리소스가 동일 버킷 정책을 관리:
-- `module.s3.aws_s3_bucket_policy.frontend` → `DenyNonTLS` (S3 모듈)
-- `module.cloudfront.aws_s3_bucket_policy.frontend_cf` → `AllowCloudFrontOAC` (CloudFront 모듈)
-
-S3 버킷은 정책이 하나뿐이므로 `terraform apply` 실행 순서에 따라 마지막으로 적용된 정책이 덮어씀.  
-S3 모듈 정책이 마지막으로 적용되면 `AllowCloudFrontOAC` 가 사라져서 CloudFront가 S3 접근 불가 → 403.
-
-**수정**
-1. `modules/s3/main.tf` — `aws_s3_bucket_policy.frontend` 리소스(DenyNonTLS) 완전 제거
-2. `modules/cloudfront/main.tf` — `aws_s3_bucket_policy.frontend_cf`에 `DenyNonTLS` Statement 추가하여 단일 정책으로 통합
-
-최종 정책 두 Statement:
-- `AllowCloudFrontOAC`: CloudFront OAC principal이 `s3:GetObject` 허용 (SourceArn 조건)
-- `DenyNonTLS`: 비TLS(`aws:SecureTransport = false`) 요청 전체 Deny (보안 강화)
-
-**원칙**: S3 버킷 정책은 하나의 Terraform 리소스만 관리해야 한다. 여러 모듈이 같은 버킷 정책을 건드리면 적용 순서에 따라 하나가 소실된다.
-
----
-
-## 25. CloudFront 403 — S3 KMS 키 복호화 권한 누락
-
-**증상**  
-버킷 정책 수정(#24) 이후에도 CloudFront 도메인에서 `403 Forbidden` 지속.
-
-**원인**  
-S3 `aigo-frontend` 버킷이 `aws:kms`(aigo-kms-s3 키)로 암호화됨.  
-CloudFront OAC가 S3 객체를 읽을 때 KMS 복호화가 필요하지만, `aws_kms_key.s3` 정책에 `cloudfront.amazonaws.com` principal이 없어 KMS가 복호화를 거부 → S3가 403 반환.
-
-버킷 정책(s3:GetObject Allow)과 KMS 키 정책은 **독립적**이며 둘 다 통과해야 접근 가능.
-
-**수정** (`modules/kms/main.tf` — `aws_kms_key.s3` 정책에 추가):
-```json
-{
-  "Sid": "AllowCloudFrontOAC",
-  "Effect": "Allow",
-  "Principal": { "Service": "cloudfront.amazonaws.com" },
-  "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
-  "Resource": "*",
-  "Condition": {
-    "StringLike": {
-      "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"
-    }
-  }
-}
-```
-
-`StringEquals`(특정 distribution ARN) 대신 `StringLike` + 계정 와일드카드 사용 이유:  
-CloudFront distribution ARN을 KMS 모듈에서 참조하면 KMS → CF → S3 → KMS 순환 의존성 발생.  
-동일 계정 내 모든 distribution으로 범위 제한(계정 수준 최소 권한).
-
-**원칙**: OAC + SSE-KMS 조합은 버킷 정책 + KMS 키 정책 두 곳 모두 CloudFront 허용 필요.
-
----
-
-## 26. Dashboard "Auth UserPool not configured" — VITE_COGNITO_* 미전달
+## 24. Dashboard "Auth UserPool not configured" — VITE_COGNITO_* 미전달
 
 **증상**  
 CloudFront 도메인 접속 시 로그인 화면에 "Auth UserPool not configured" 표시.
@@ -834,30 +774,3 @@ Vite 빌드 시 `import.meta.env.VITE_*` 값이 `undefined`로 번들링되어 A
 - `cloudfront` 모듈에 `cognito_domain` 변수 추가 → `envs/prod/main.tf`에서 전달
 
 **원칙**: Vite 빌드 타임 env var(`VITE_*`)는 빌드 스텝 `env:` 블록에 명시적으로 전달해야 한다. Terraform 출력값은 `terraform output -raw`로 읽어 `GITHUB_OUTPUT`에 저장 후 job outputs로 전파한다.
-
----
-
-## 27. CSP 와일드카드 + Google Fonts 차단
-
-**증상**
-```
-The source list for Content Security Policy 'connect-src' contains an invalid source:
-  'https://cognito-idp.*.amazonaws.com'
-  'https://*.execute-api.*.amazonaws.com'
-style-src violates CSP: 'https://fonts.googleapis.com/...'
-```
-
-**원인**  
-CSP는 호스트명 중간 와일드카드를 지원하지 않음:
-- `cognito-idp.*.amazonaws.com` → 호스트명 중간 `*` → 무효
-- `*.execute-api.*.amazonaws.com` → 복수 `*` → 무효
-- `style-src`에 `https://fonts.googleapis.com` 미포함
-
-**수정** (`modules/cloudfront/main.tf` CSP 문자열):
-- `cognito-idp.*.amazonaws.com` → `cognito-idp.ap-northeast-2.amazonaws.com` (리전 고정)
-- `*.execute-api.*.amazonaws.com` → `*.execute-api.ap-northeast-2.amazonaws.com` (선두 `*`만 허용)
-- Cognito 호스팅 UI 도메인 추가: `https://${var.cognito_domain}`
-- `style-src`에 `https://fonts.googleapis.com` 추가
-- `font-src 'self' https://fonts.gstatic.com` 추가
-
-CSP 와일드카드 규칙: 호스트명 시작(`*.example.com`)만 허용, 중간 또는 복수 와일드카드 불가.

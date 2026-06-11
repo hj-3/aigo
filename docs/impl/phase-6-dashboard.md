@@ -42,25 +42,32 @@ src/
     FixCenterPage.tsx         — Fix 요청 목록 + 상태 필터
     JobDetailPage.tsx         — 분석 Job 상세 + Agent 실행 타임라인
     SettingsPage.tsx          — 조직 설정 (ADMIN 권한 필요)
-    LoginPage.tsx             — Cognito Hosted UI 리다이렉트
+    LoginPage.tsx             — Cognito Managed Login 리다이렉트
 ```
 
-### 인증 (Amplify v6 + Cognito Hosted UI)
+### 인증 (Amplify v6 + Cognito Managed Login)
+
+> **변경 이력**: 초기 설계는 Hosted UI(Classic). 이후 Managed Login(v2)으로 전환.  
+> `modules/cognito/main.tf`에 `managed_login_version = 2` + `aws_cognito_managed_login_branding` 추가.  
+> 비밀번호 최소 길이: 12자 → 8자.  
+> Cognito 콜백 URL 경로: `/auth/callback` → `/`(루트).  
+> 상세 수정 내역: `docs/impl/terraform-apply-fixes.md` #21, #22.
 
 **초기화 (`main.tsx`)**
-`Amplify.configure()`를 React 렌더 전에 호출한다. 설정값은 런타임 환경변수(VITE_*)에서 주입한다.
+`Amplify.configure()`를 React 렌더 전에 호출한다. 설정값은 빌드 타임 환경변수(VITE_*)에서 주입한다.
 
 ```
 VITE_COGNITO_USER_POOL_ID   — Cognito User Pool ID
 VITE_COGNITO_CLIENT_ID      — App Client ID
-VITE_COGNITO_DOMAIN         — Hosted UI 도메인 (xxx.auth.ap-northeast-2.amazoncognito.com)
-VITE_REDIRECT_SIGN_IN       — OAuth 콜백 URL
+VITE_COGNITO_DOMAIN         — Managed Login 도메인 (xxx.auth.ap-northeast-2.amazoncognito.com)
+VITE_REDIRECT_SIGN_IN       — OAuth 콜백 URL (CloudFront 도메인 루트 /)
 VITE_REDIRECT_SIGN_OUT      — 로그아웃 후 리다이렉트 URL
 VITE_API_URL                — Dashboard API Base URL
 ```
 
 OAuth 설정: `scopes: ['email','openid','profile']`, `responseType: 'code'` (Authorization Code Flow).
-`allow_admin_create_user_only = true`이므로 사용자는 Hosted UI를 통해서만 로그인한다.
+`allow_admin_create_user_only = false` — Managed Login UI에서 자가 가입 허용.
+빌드 타임 주입: CD `deploy-dashboard` 잡에서 `terraform output -raw`로 읽은 값을 `VITE_*` 환경변수로 전달. (`docs/impl/cicd-fixes.md` #24 참조)
 
 **AuthProvider (`components/AuthProvider.tsx`)**
 - 마운트 시 `getCurrentUser() + fetchUserAttributes()`로 초기 사용자 조회

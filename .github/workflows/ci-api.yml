@@ -3,14 +3,6 @@ name: CI — API & Connectors
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'apps/dashboard-api/**'
-      - 'connectors/**'
-      - 'workers/lightweight/**'
-      - 'packages/**'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/ci-api.yml'
-  push:
     branches: [main]
     paths:
       - 'apps/dashboard-api/**'

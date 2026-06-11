@@ -742,6 +742,96 @@ redirectSignOut: [currentOrigin],
 
 ---
 
+## 25. API Gateway 라우트 누락 — /dashboard/stats, /repositories 404
+
+**증상**
+```
+GET /prod/dashboard/stats 404 (Not Found)
+CORS policy: No 'Access-Control-Allow-Origin' header (404 응답에 CORS 헤더 없음)
+```
+
+**원인**  
+`apps/dashboard-api/src/index.ts`에 `/dashboard`와 `/repositories` 라우터가 등록되어 있으나  
+`envs/prod/main.tf`의 API Gateway 라우트 맵에 두 경로가 누락됨.
+
+Lambda(Hono) 코드: `app.route('/dashboard', dashboardRouter)` → `GET /stats` 처리 가능  
+API Gateway: `GET /dashboard/stats` 라우트 미등록 → 404
+
+CORS 오류는 부수 현상 — 404 응답에 CORS 헤더가 포함되지 않아 CORS 오류처럼 보임.  
+실제 CORS AllowOrigins에는 `https://app.seolphung.com`이 정상 등록되어 있었음.
+
+**수정** (`envs/prod/main.tf` routes 맵에 추가):
+```hcl
+"GET /dashboard/stats" = module.lambda_dashboard_api.alias_arn
+"GET /repositories"    = module.lambda_dashboard_api.alias_arn
+```
+
+**원칙**: Lambda(Hono) 라우트와 API Gateway 라우트 맵은 항상 동기화 상태를 유지해야 한다.  
+새 엔드포인트 추가 시 두 곳 모두 업데이트 필수.
+
+---
+
+## 26. Lambda 500 — DynamoDB GSI 이름 불일치
+
+**증상**
+```
+GET /prod/dashboard/stats 500 Internal Server Error
+```
+
+**원인**  
+CloudWatch 로그:
+```
+ValidationException: The table does not have the specified index: GSI1
+```
+
+`apps/dashboard-api/src/routes/` 전체에서 DynamoDB `IndexName`을 `'GSI1'`/`'GSI2'`로 참조했으나  
+실제 테이블의 GSI 이름은 `'GSI1-orgId-createdAt-index'`와 같이 전체 설명 이름 형식.
+
+또한 추가 문제:
+- `dashboard.ts`의 Reports 쿼리가 `GSI1`(jobId 인덱스)을 `ORG#${orgId}` 키로 잘못 사용 → `GSI3-orgApprovalStatus-createdAt-index` 사용해야 함
+- `reports.ts`의 Findings 쿼리가 `JOB#${jobId}` 키를 사용했으나 Findings GSI1은 `REPORT#${reportId}` 기반
+- `Select: 'COUNT'` 사용 시 `ddbQuery`가 `items: []` 반환 → `.items.length` 항상 0
+
+**수정** (`apps/dashboard-api/src/routes/*.ts`):
+
+| 파일 | 기존 | 수정 |
+|------|------|------|
+| `dashboard.ts` | `GSI2` (AnalysisJobs) | `GSI2-orgStatus-createdAt-index` |
+| `dashboard.ts` | `GSI1` (Incidents) | `GSI1-orgId-createdAt-index` |
+| `dashboard.ts` | `GSI2` (Approvals) | `GSI2-orgId-createdAt-index` |
+| `dashboard.ts` | `GSI1` + `GSI1PK` (Reports) | `GSI3-orgApprovalStatus-createdAt-index` + `GSI3PK` |
+| `reports.ts` | `GSI1` + `GSI1PK` (Reports) | `GSI3-orgApprovalStatus-createdAt-index` + `GSI3PK` |
+| `reports.ts` | `GSI1` + `JOB#` (Findings) | `GSI1-reportId-severity-index` + `REPORT#${reportId}` |
+| `incidents.ts` | `GSI1` | `GSI1-orgId-createdAt-index` |
+| `repositories.ts` | `GSI1` | `GSI1-orgId-provider-index` |
+| `jobs.ts` | `GSI2` (AnalysisJobs) | `GSI2-orgStatus-createdAt-index` |
+| `jobs.ts` | `GSI1` (AgentRuns) | `GSI1-jobId-agentType-index` |
+
+`Select: 'COUNT'`도 제거 → `Limit: 100`으로 대체 (ddbQuery는 Count 미반환).
+
+**Lambda 즉시 재배포** (로컬 빌드):
+```bash
+pnpm -r --filter="{packages/**}" build
+pnpm -F "@aigo/dashboard-api" bundle
+bash scripts/deploy-lambda.sh dashboard-api aigo-dashboard-api
+```
+
+**ALLOWED_ORIGINS 누락** — 함께 발견:  
+`lambda_common_env`에 `ALLOWED_ORIGINS` 미등록으로 CORS 헤더 미전송.  
+`main.tf`에 추가:
+```hcl
+ALLOWED_ORIGINS = "https://app.seolphung.com,https://${module.cloudfront.distribution_domain_name}"
+```
+AWS CLI로 즉시 적용:
+```bash
+aws lambda update-function-configuration --function-name aigo-dashboard-api \
+  --environment Variables="{...,ALLOWED_ORIGINS=https://app.seolphung.com,...}"
+```
+
+**원칙**: Terraform DynamoDB 모듈 GSI 이름(`GSI1-${purpose}-index` 형식)과 애플리케이션 코드의 `IndexName` 값은 항상 일치해야 한다.
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.

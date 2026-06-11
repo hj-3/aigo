@@ -12,7 +12,7 @@ repositoriesRouter.get('/', async (c) => {
 
   const { items } = await ddbQuery({
     TableName: Config.tableName('Repositories'),
-    IndexName: 'GSI1',
+    IndexName: 'GSI1-orgId-provider-index',
     KeyConditionExpression: 'GSI1PK = :pk',
     ExpressionAttributeValues: { ':pk': `ORG#${orgId}` },
     ScanIndexForward: false,

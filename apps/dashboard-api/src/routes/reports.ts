@@ -12,8 +12,8 @@ reportsRouter.get('/', async (c) => {
 
   const { items } = await ddbQuery({
     TableName: Config.tableName('Reports'),
-    IndexName: 'GSI1',
-    KeyConditionExpression: 'GSI1PK = :pk',
+    IndexName: 'GSI3-orgApprovalStatus-createdAt-index',
+    KeyConditionExpression: 'GSI3PK = :pk',
     ExpressionAttributeValues: { ':pk': `ORG#${orgId}` },
     ScanIndexForward: false,
     Limit: 50,
@@ -37,12 +37,11 @@ reportsRouter.get('/:reportId', async (c) => {
   }
 
   // Fetch findings for this report
-  const jobId = (report as Record<string, string>)['jobId'];
   const { items: findings } = await ddbQuery({
     TableName: Config.tableName('Findings'),
-    IndexName: 'GSI1',
+    IndexName: 'GSI1-reportId-severity-index',
     KeyConditionExpression: 'GSI1PK = :pk',
-    ExpressionAttributeValues: { ':pk': `JOB#${jobId}` },
+    ExpressionAttributeValues: { ':pk': `REPORT#${reportId}` },
     ScanIndexForward: false,
   });
 

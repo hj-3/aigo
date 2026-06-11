@@ -266,103 +266,307 @@ https://API_GATEWAY_URL/slack/events
 
 GitHub 리포지토리 → **Actions** → **CD: Deploy** → **Run workflow**
 
-선택 항목:
-- [x] Deploy Infrastructure (건너뜀 - Phase D에서 완료)
-- [x] Deploy Lambda Functions
-- [x] Deploy Heavy Worker (ECS)
-- [x] Deploy Dashboard
+- [x] deploy-infra: global/iam + envs/prod Terraform apply 성공
+- [x] deploy-api: Lambda 6개 배포 완료
+  - aigo-github-connector, aigo-slack-connector, aigo-aws-event-connector
+  - aigo-dashboard-cmd-connector, aigo-lightweight-worker, aigo-dashboard-api
+- [x] deploy-heavy-worker: ECR 이미지 빌드 + ECS Task Definition 등록 완료
+- [x] deploy-dashboard: S3 sync + CloudFront 무효화 완료
 
-- [ ] Lambda 6개 배포 완료 (github-connector, slack-connector, aws-event-connector, dashboard-cmd-connector, worker-lightweight, dashboard-api)
-- [ ] ECS heavy-worker 이미지 배포 완료
-- [ ] Dashboard S3 + CloudFront 배포 완료
+> **현재 상태 (2026-06-11):** CD 전체 파이프라인 PASSING.  
+> Dashboard는 CloudFront 기본 도메인으로 접근 가능. 커스텀 도메인 연결은 아래 Phase G-3 참조.
+
+### G-3. 커스텀 도메인 연결 (선택 사항)
+
+현재 배포 상태: CloudFront 기본 도메인(`xxxx.cloudfront.net`)으로만 접근 가능.  
+커스텀 도메인(`app.your-domain.com`)을 연결하려면 아래 3단계가 필요하다.
+
+> **Terraform 범위 밖 작업:** Route53 및 ACM은 현재 Terraform으로 관리되지 않는다.  
+> 아래는 AWS 콘솔 또는 CLI로 직접 수행한다.
+
+#### G-3-1. ACM 인증서 발급 (us-east-1 필수)
+
+CloudFront는 **반드시 us-east-1** 리전의 ACM 인증서를 요구한다.
+
+```bash
+# us-east-1에서 인증서 요청
+aws acm request-certificate \
+  --domain-name "app.your-domain.com" \
+  --validation-method DNS \
+  --region us-east-1
+
+# 출력된 CertificateArn 메모
+# → arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID
+```
+
+DNS 검증: ACM 콘솔에서 CNAME 레코드 확인 → Route53에 추가 → 인증서 상태 `ISSUED` 대기.
+
+#### G-3-2. Route53 호스팅 영역 생성
+
+도메인 등록처가 Route53이 아닌 경우 호스팅 영역만 생성하고 NS 레코드를 외부 등록처에 위임.
+
+```bash
+# 호스팅 영역 생성
+aws route53 create-hosted-zone \
+  --name "your-domain.com" \
+  --caller-reference "$(date +%s)"
+
+# 출력된 NameServers 4개를 도메인 등록처의 NS 레코드에 설정
+```
+
+**AWS 콘솔 경로:** Route53 → Hosted zones → Create hosted zone → Domain name 입력 → Public hosted zone
+
+#### G-3-3. CloudFront Alias A 레코드 추가
+
+```bash
+CF_DIST_ID="EXXXXXXXXXXXX"   # Phase D output
+CF_DOMAIN=$(aws cloudfront get-distribution \
+  --id $CF_DIST_ID \
+  --query 'Distribution.DomainName' --output text)
+
+# Route53 A 레코드 (Alias) 추가
+HOSTED_ZONE_ID="Z0XXXXXXXXXXXXXXXXX"  # 위에서 생성한 호스팅 영역 ID
+
+aws route53 change-resource-record-sets \
+  --hosted-zone-id $HOSTED_ZONE_ID \
+  --change-batch "{
+    \"Changes\": [{
+      \"Action\": \"CREATE\",
+      \"ResourceRecordSet\": {
+        \"Name\": \"app.your-domain.com\",
+        \"Type\": \"A\",
+        \"AliasTarget\": {
+          \"HostedZoneId\": \"Z2FDTNDATAQYW2\",
+          \"DNSName\": \"$CF_DOMAIN\",
+          \"EvaluateTargetHealth\": false
+        }
+      }
+    }]
+  }"
+```
+
+> `Z2FDTNDATAQYW2` 는 CloudFront의 고정 호스팅 영역 ID (모든 리전 동일).
+
+#### G-3-4. Terraform CloudFront 설정에 도메인 반영
+
+`infra/terraform/envs/prod/terraform.tfvars`에 추가 후 CD 실행:
+
+```hcl
+domain_name         = "your-domain.com"
+acm_certificate_arn = "arn:aws:acm:us-east-1:ACCOUNT:certificate/UUID"
+```
+
+이렇게 하면 CloudFront `aliases = ["app.your-domain.com"]` 가 설정됨.
+
+- [ ] ACM 인증서 발급 완료 (us-east-1)
+- [ ] Route53 호스팅 영역 생성 완료
+- [ ] DNS 검증 완료 (인증서 ISSUED)
+- [ ] A 레코드 추가 완료
+- [ ] terraform.tfvars에 domain_name + acm_certificate_arn 반영 + CD 실행
 
 ---
 
 ## Phase H — 초기 데이터 설정
 
+> **전제:** Phase G CD 파이프라인 전체 PASSING 이후 진행.  
+> 아래 명령은 로컬 터미널에서 `aws configure`로 설정된 관리자 계정으로 실행.
+
 ### H-1. Cognito 첫 번째 OWNER 사용자 생성
 
-```bash
-USER_POOL_ID="ap-northeast-2_XXXXXXXXX"  # Phase D output
+Cognito User Pool은 Terraform으로 생성됐지만 초기 관리자 계정은 코드로 관리하지 않으므로  
+CLI로 직접 생성한다.
 
+```bash
+# Cognito User Pool ID 확인 (Terraform output 또는 콘솔)
+USER_POOL_ID=$(aws cognito-idp list-user-pools --max-results 10 \
+  --region ap-northeast-2 \
+  --query "UserPools[?Name=='aigo'].Id" --output text)
+
+echo "User Pool ID: $USER_POOL_ID"
+# → ap-northeast-2_AKb8Xkx3b  (실제 배포된 값)
+```
+
+```bash
+ADMIN_EMAIL="admin@your-domain.com"   # ← 실제 이메일로 교체
+ADMIN_PASSWORD="YourStrongPass123!"   # ← 12자+, 대소문자+숫자+특수문자
+
+# 사용자 생성 (이메일 발송 없음)
 aws cognito-idp admin-create-user \
-  --user-pool-id $USER_POOL_ID \
-  --username "admin@your-domain.com" \
+  --region ap-northeast-2 \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "$ADMIN_EMAIL" \
   --temporary-password "TempPass123!" \
   --user-attributes \
-    Name=email,Value="admin@your-domain.com" \
+    Name=email,Value="$ADMIN_EMAIL" \
     Name=email_verified,Value=true \
     Name=custom:orgId,Value="org-001" \
     Name=custom:role,Value="OWNER" \
   --message-action SUPPRESS
 
-# 임시 비밀번호를 영구 비밀번호로 변경
+# FORCE_CHANGE_PASSWORD → CONFIRMED 상태로 전환
 aws cognito-idp admin-set-user-password \
-  --user-pool-id $USER_POOL_ID \
-  --username "admin@your-domain.com" \
-  --password "YourStrongPassword123!" \
+  --region ap-northeast-2 \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "$ADMIN_EMAIL" \
+  --password "$ADMIN_PASSWORD" \
   --permanent
+
+# Cognito 그룹(OWNER)에 추가
+aws cognito-idp admin-add-user-to-group \
+  --region ap-northeast-2 \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "$ADMIN_EMAIL" \
+  --group-name OWNER
+
+echo "✅ OWNER 사용자 생성 완료: $ADMIN_EMAIL"
 ```
 
-- [ ] 첫 OWNER 사용자 생성 완료
+**확인:**
+```bash
+aws cognito-idp admin-get-user \
+  --region ap-northeast-2 \
+  --user-pool-id "$USER_POOL_ID" \
+  --username "$ADMIN_EMAIL" \
+  --query "UserStatus"
+# → "CONFIRMED" 이어야 함
+```
 
-### H-2. 조직 DynamoDB 레코드 생성
+- [ ] 첫 OWNER 사용자 생성 완료 (UserStatus: CONFIRMED)
+- [ ] OWNER 그룹 추가 완료
+
+---
+
+### H-2. Organizations DynamoDB 레코드 생성
+
+Dashboard API가 `aigo-Organizations` 테이블에서 조직 정보를 읽는다.  
+초기 레코드가 없으면 대시보드 로그인 후 데이터 조회가 실패한다.
 
 ```bash
+ORG_ID="org-001"
+ORG_NAME="Your Organization"   # ← 실제 조직명으로 교체
+
 aws dynamodb put-item \
+  --region ap-northeast-2 \
   --table-name aigo-Organizations \
-  --item '{
-    "PK": {"S": "ORG#org-001"},
-    "SK": {"S": "METADATA"},
-    "orgId": {"S": "org-001"},
-    "name": {"S": "Your Organization"},
-    "autoAnalyzeOnPR": {"BOOL": true},
-    "approvalRequired": {"BOOL": true},
-    "riskThreshold": {"S": "HIGH"},
-    "timezone": {"S": "Asia/Seoul"},
-    "createdAt": {"S": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'"}
-  }' \
-  --region ap-northeast-2
+  --item "{
+    \"PK\": {\"S\": \"ORG#${ORG_ID}\"},
+    \"SK\": {\"S\": \"METADATA\"},
+    \"orgId\": {\"S\": \"${ORG_ID}\"},
+    \"name\": {\"S\": \"${ORG_NAME}\"},
+    \"autoAnalyzeOnPR\": {\"BOOL\": true},
+    \"approvalRequired\": {\"BOOL\": true},
+    \"riskThreshold\": {\"S\": \"HIGH\"},
+    \"timezone\": {\"S\": \"Asia/Seoul\"},
+    \"createdAt\": {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"},
+    \"updatedAt\": {\"S\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}
+  }"
+
+echo "✅ Organizations 레코드 생성 완료"
+```
+
+**확인:**
+```bash
+aws dynamodb get-item \
+  --region ap-northeast-2 \
+  --table-name aigo-Organizations \
+  --key '{"PK":{"S":"ORG#org-001"},"SK":{"S":"METADATA"}}' \
+  --query "Item.name.S"
+# → "Your Organization"
 ```
 
 - [ ] Organizations 초기 레코드 생성 완료
 
+---
+
 ### H-3. Knowledge Base 문서 업로드
 
+Bedrock KB(`BTLXQGMG9F`)가 검색할 문서를 S3 `aigo-kb` 버킷에 업로드한다.  
+문서가 없으면 Agent가 KB 검색 시 빈 결과를 반환한다.
+
+#### H-3-1. KB 문서 디렉토리 구조 생성
+
 ```bash
-KB_BUCKET="aigo-kb"  # Terraform output 확인
-
-# 폴더 구조 생성 및 문서 업로드
-# coding-standards/
-aws s3 cp docs/kb/coding-standards/ s3://$KB_BUCKET/coding-standards/ --recursive
-aws s3 cp docs/kb/coding-standards.metadata.json s3://$KB_BUCKET/coding-standards/.metadata.json
-
-# infrastructure-standards/
-aws s3 cp docs/kb/infrastructure-standards/ s3://$KB_BUCKET/infrastructure-standards/ --recursive
-
-# security-policies/
-aws s3 cp docs/kb/security-policies/ s3://$KB_BUCKET/security-policies/ --recursive
-
-# risk-policies/
-aws s3 cp docs/kb/risk-policies/ s3://$KB_BUCKET/risk-policies/ --recursive
-
-# Bedrock KB 동기화 트리거
-KB_ID=$(aws ssm get-parameter --name "/aigo/bedrock/kb-id" --query "Parameter.Value" --output text)
-DATA_SOURCE_IDS=$(aws bedrock-agent list-data-sources --knowledge-base-id $KB_ID --query "dataSourceSummaries[*].dataSourceId" --output text)
-for DS_ID in $DATA_SOURCE_IDS; do
-  aws bedrock-agent start-ingestion-job --knowledge-base-id $KB_ID --data-source-id $DS_ID
-done
+mkdir -p docs/kb/coding-standards
+mkdir -p docs/kb/infrastructure-standards
+mkdir -p docs/kb/security-policies
+mkdir -p docs/kb/risk-policies
 ```
 
-각 문서의 `.metadata.json` 사이드카 형식:
+각 디렉토리에 `.md` 또는 `.txt` 문서 파일을 작성한다.  
+최소한 각 카테고리에 1개 이상의 문서가 있어야 KB 동기화가 의미 있다.
+
+**문서 예시 (`docs/kb/coding-standards/typescript.md`):**
+```markdown
+# TypeScript Coding Standards
+
+## Naming Conventions
+- Variables and functions: camelCase
+- Classes and interfaces: PascalCase
+...
+```
+
+**메타데이터 사이드카 파일** (각 문서와 같은 이름 + `.metadata.json`):
 ```json
 { "metadataAttributes": { "category": "coding_standards" } }
 ```
 
 카테고리 값: `coding_standards` | `infrastructure_standards` | `security_policies` | `risk_policies`
 
-- [ ] KB 문서 S3 업로드 완료
-- [ ] Bedrock 인제스션 Job 실행 완료
+#### H-3-2. S3 업로드
+
+```bash
+KB_BUCKET="aigo-kb"
+
+# 각 카테고리 업로드
+for CATEGORY in coding-standards infrastructure-standards security-policies risk-policies; do
+  if [ -d "docs/kb/${CATEGORY}" ]; then
+    aws s3 sync "docs/kb/${CATEGORY}/" "s3://${KB_BUCKET}/${CATEGORY}/" \
+      --region ap-northeast-2
+    echo "✅ ${CATEGORY} 업로드 완료"
+  fi
+done
+```
+
+#### H-3-3. Bedrock KB 동기화 트리거
+
+```bash
+KB_ID="BTLXQGMG9F"   # Terraform 배포된 실제 KB ID
+
+# Data Source ID 목록 조회
+DATA_SOURCE_IDS=$(aws bedrock-agent list-data-sources \
+  --region ap-northeast-2 \
+  --knowledge-base-id "$KB_ID" \
+  --query "dataSourceSummaries[*].dataSourceId" \
+  --output text)
+
+# 각 Data Source 인제스션 시작
+for DS_ID in $DATA_SOURCE_IDS; do
+  JOB=$(aws bedrock-agent start-ingestion-job \
+    --region ap-northeast-2 \
+    --knowledge-base-id "$KB_ID" \
+    --data-source-id "$DS_ID" \
+    --query "ingestionJob.ingestionJobId" \
+    --output text)
+  echo "인제스션 시작: $DS_ID → Job ID: $JOB"
+done
+
+echo "⏱️  인제스션 완료까지 수 분 소요. 아래 명령으로 상태 확인:"
+echo "aws bedrock-agent list-ingestion-jobs --region ap-northeast-2 --knowledge-base-id $KB_ID"
+```
+
+**인제스션 상태 확인:**
+```bash
+aws bedrock-agent list-ingestion-jobs \
+  --region ap-northeast-2 \
+  --knowledge-base-id "$KB_ID" \
+  --query "ingestionJobSummaries[*].[status,statistics.numberOfDocumentsScanned]" \
+  --output table
+# COMPLETE 상태 확인
+```
+
+- [ ] KB 문서 작성 완료 (카테고리별 최소 1개)
+- [ ] S3 `aigo-kb` 업로드 완료
+- [ ] Bedrock 인제스션 Job 실행 완료 (상태: COMPLETE)
 
 ---
 
@@ -411,13 +615,15 @@ aws cloudwatch describe-alarms \
 
 ## 배포 완료 체크리스트
 
-- [ ] Phase A — Terraform 상태 저장소 생성
-- [ ] Phase B — Global IAM (GitHub OIDC) 배포
+- [x] Phase A — Terraform 상태 저장소 생성
+- [x] Phase B — Global IAM (GitHub OIDC) 배포
 - [ ] Phase C — GitHub App + Slack App 등록 + Secrets Manager 초기화
-- [ ] Phase D — 인프라 Terraform apply
-- [ ] Phase E — GitHub Secrets 8개 설정
+- [x] Phase D — 인프라 Terraform apply (CD auto-apply)
+- [x] Phase E — GitHub Secrets 설정
 - [ ] Phase F — Webhook/Slash Command URL 업데이트
-- [ ] Phase G — 애플리케이션 배포 (Agents + Lambda + ECS + Dashboard)
+- [x] Phase G-2 — CD 파이프라인 (Lambda + ECS + Dashboard) PASSING
+- [ ] Phase G-1 — Bedrock Agent 7개 배포
+- [ ] Phase G-3 — 커스텀 도메인 연결 (선택)
 - [ ] Phase H — 초기 데이터 설정 (Cognito 사용자, Organization, KB 문서)
 - [ ] Phase I — 배포 검증
 

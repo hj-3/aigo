@@ -139,6 +139,7 @@ locals {
   lambda_common_env = {
     STAGE                      = "prod"
     DYNAMODB_TABLE_PREFIX      = var.project
+    ALLOWED_ORIGINS            = "https://app.seolphung.com,https://${module.cloudfront.distribution_domain_name}"
     S3_DIFFS_BUCKET            = module.s3.bucket_names["diffs"]
     S3_REPORTS_BUCKET          = module.s3.bucket_names["reports"]
     S3_AGENT_OUTPUTS_BUCKET    = module.s3.bucket_names["agent_outputs"]
@@ -338,6 +339,8 @@ module "api_gateway" {
     "GET /settings"                    = module.lambda_dashboard_api.alias_arn
     "PATCH /settings"                  = module.lambda_dashboard_api.alias_arn
     "GET /health"                      = module.lambda_dashboard_api.alias_arn
+    "GET /dashboard/stats"             = module.lambda_dashboard_api.alias_arn
+    "GET /repositories"                = module.lambda_dashboard_api.alias_arn
   }
 }
 

@@ -12,7 +12,7 @@ incidentsRouter.get('/', async (c) => {
 
   const { items } = await ddbQuery({
     TableName: Config.tableName('Incidents'),
-    IndexName: 'GSI1',
+    IndexName: 'GSI1-orgId-createdAt-index',
     KeyConditionExpression: 'GSI1PK = :pk',
     ExpressionAttributeValues: { ':pk': `ORG#${orgId}` },
     ScanIndexForward: false,

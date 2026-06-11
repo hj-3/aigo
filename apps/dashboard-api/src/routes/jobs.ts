@@ -13,7 +13,7 @@ jobsRouter.get('/', async (c) => {
 
   const { items } = await ddbQuery({
     TableName: Config.tableName('AnalysisJobs'),
-    IndexName: 'GSI2',
+    IndexName: 'GSI2-orgStatus-createdAt-index',
     KeyConditionExpression: 'GSI2PK = :pk',
     ExpressionAttributeValues: { ':pk': `ORG#${orgId}#${status}` },
     ScanIndexForward: false,
@@ -44,7 +44,7 @@ jobsRouter.get('/agent-runs', async (c) => {
 
   const { items } = await ddbQuery({
     TableName: Config.tableName('AgentRuns'),
-    IndexName: 'GSI1',
+    IndexName: 'GSI1-jobId-agentType-index',
     KeyConditionExpression: 'GSI1PK = :pk',
     ExpressionAttributeValues: { ':pk': `JOB#${jobId}` },
     ScanIndexForward: true,

@@ -3,19 +3,13 @@ name: CI — Agents & Tools
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - 'agents/**'
-      - 'tools/**'
-      - 'libs/**'
-      - 'workers/heavy/**'
-      - '.github/workflows/ci-agents.yml'
-  push:
     branches: [main]
     paths:
       - 'agents/**'
       - 'tools/**'
       - 'libs/**'
       - 'workers/heavy/**'
+      - 'prompts/**'
       - '.github/workflows/ci-agents.yml'
 
 permissions:
