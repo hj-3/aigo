@@ -84,6 +84,7 @@ module "bedrock_agentcore" {
   knowledge_base_arns   = [module.bedrock_kb.knowledge_base_arn]
   s3_agent_packages_arn = module.s3.bucket_arns["agent_packages"]
   kms_key_arn           = module.kms.lambda_key_arn
+  foundation_model      = "apac.anthropic.claude-sonnet-4-20250514-v1:0"
 
   agent_instructions = {
     orchestrator   = file("${path.root}/../../../../prompts/v1/orchestrator.md")
@@ -376,14 +377,14 @@ module "ecs" {
 # CloudFront
 # ──────────────────────────────────────────────────────────────────────────────
 module "cloudfront" {
-  source               = "../../modules/cloudfront"
-  project              = var.project
-  frontend_bucket_id   = module.s3.bucket_ids["frontend"]
-  frontend_bucket_arn  = module.s3.bucket_arns["frontend"]
-  api_domain           = replace(module.api_gateway.stage_invoke_url, "https://", "")
-  domain_name          = var.domain_name
-  acm_certificate_arn  = data.aws_acm_certificate.wildcard.arn
-  cognito_domain       = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
+  source              = "../../modules/cloudfront"
+  project             = var.project
+  frontend_bucket_id  = module.s3.bucket_ids["frontend"]
+  frontend_bucket_arn = module.s3.bucket_arns["frontend"]
+  api_domain          = replace(module.api_gateway.stage_invoke_url, "https://", "")
+  domain_name         = var.domain_name
+  acm_certificate_arn = data.aws_acm_certificate.wildcard.arn
+  cognito_domain      = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
 }
 
 # Route53 — app.seolphung.com → CloudFront (A + AAAA alias)

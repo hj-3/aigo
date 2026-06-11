@@ -352,6 +352,12 @@ resource "aws_iam_role_policy" "lambda_worker" {
         Effect   = "Allow"
         Action   = ["events:PutEvents"]
         Resource = local.eb_arn
+      },
+      {
+        Sid      = "BedrockInvokeAgent"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeAgent"]
+        Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:agent-alias/*/*"
       }
     ]
   })
