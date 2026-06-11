@@ -129,7 +129,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
     }
 
     content_security_policy {
-      content_security_policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://cognito-idp.*.amazonaws.com https://*.execute-api.*.amazonaws.com"
+      content_security_policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://cognito-idp.ap-northeast-2.amazonaws.com https://${var.cognito_domain} https://*.execute-api.ap-northeast-2.amazonaws.com"
       override                = true
     }
   }

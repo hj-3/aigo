@@ -363,6 +363,7 @@ module "cloudfront" {
   frontend_bucket_arn = module.s3.bucket_arns["frontend"]
   api_domain          = replace(module.api_gateway.stage_invoke_url, "https://", "")
   domain_name         = var.domain_name
+  cognito_domain      = "${module.cognito.domain}.auth.ap-northeast-2.amazoncognito.com"
 }
 
 # ──────────────────────────────────────────────────────────────────────────────

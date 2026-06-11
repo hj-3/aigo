@@ -35,7 +35,10 @@ jobs:
     if: ${{ inputs.component == 'all' || inputs.component == 'infra' || github.event_name == 'push' }}
     environment: production
     outputs:
-      api_function_name: ${{ steps.tf-outputs.outputs.api_function_name }}
+      cognito_user_pool_id: ${{ steps.tf-outputs.outputs.cognito_user_pool_id }}
+      cognito_client_id:    ${{ steps.tf-outputs.outputs.cognito_client_id }}
+      cognito_domain:       ${{ steps.tf-outputs.outputs.cognito_domain }}
+      cloudfront_domain:    ${{ steps.tf-outputs.outputs.cloudfront_domain }}
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +103,15 @@ jobs:
           TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
           TF_VAR_github_org: ${{ secrets.GH_ORG }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+      - name: Read Terraform outputs
+        id: tf-outputs
+        working-directory: infra/terraform/envs/prod
+        run: |
+          echo "cognito_user_pool_id=$(terraform output -raw cognito_user_pool_id)" >> "$GITHUB_OUTPUT"
+          echo "cognito_client_id=$(terraform output -raw cognito_client_id)"       >> "$GITHUB_OUTPUT"
+          echo "cognito_domain=$(terraform output -raw cognito_domain)"             >> "$GITHUB_OUTPUT"
+          echo "cloudfront_domain=$(terraform output -raw cloudfront_domain)"       >> "$GITHUB_OUTPUT"
 
   # ──────────────────────────────────────────────────────
   # 2. Lambda Functions (connectors + workers + API)
@@ -216,7 +228,12 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm -F "@aigo/dashboard" build
         env:
-          VITE_API_URL: ${{ secrets.API_GATEWAY_URL }}
+          VITE_API_URL:               ${{ secrets.API_GATEWAY_URL }}
+          VITE_COGNITO_USER_POOL_ID:  ${{ needs.deploy-infra.outputs.cognito_user_pool_id }}
+          VITE_COGNITO_CLIENT_ID:     ${{ needs.deploy-infra.outputs.cognito_client_id }}
+          VITE_COGNITO_DOMAIN:        ${{ needs.deploy-infra.outputs.cognito_domain }}
+          VITE_REDIRECT_SIGN_IN:      https://${{ needs.deploy-infra.outputs.cloudfront_domain }}/
+          VITE_REDIRECT_SIGN_OUT:     https://${{ needs.deploy-infra.outputs.cloudfront_domain }}/
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4

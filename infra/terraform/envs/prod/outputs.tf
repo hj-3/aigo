@@ -16,6 +16,10 @@ output "cognito_client_id" {
   value = module.cognito.client_id
 }
 
+output "cognito_domain" {
+  value = "${module.cognito.domain}.auth.ap-northeast-2.amazoncognito.com"
+}
+
 output "dynamodb_table_names" {
   value = module.dynamodb.table_names
 }
