@@ -636,14 +636,14 @@ aws cloudwatch describe-alarms \
 - [x] Phase C — GitHub App + Slack App 등록 + Secrets Manager 초기화
 - [x] Phase D — 인프라 Terraform apply (CD auto-apply)
 - [x] Phase E — GitHub Secrets 설정
-- [ ] Phase F — Webhook/Slash Command URL 업데이트 (미완료 — I-2 웹훅 테스트 전 필요)
+- [x] Phase F — Webhook/Slash Command URL 업데이트
 - [x] Phase G-1 — Bedrock Agent 7개 배포 (Terraform으로 자동 완료, 상태: PREPARED)
 - [x] Phase G-2 — CD 파이프라인 (Lambda + ECS + Dashboard) PASSING
-- [ ] Phase G-3 — 커스텀 도메인 연결 (선택)
+- [x] Phase G-3 — 커스텀 도메인 연결 완료 (app.seolphung.com, ACM us-east-1)
 - [x] Phase H — 초기 데이터 설정 (Cognito 사용자, Organization, KB 문서)
 - [x] Phase I-1 — API /health + CloudFront 헬스체크 PASSING
-- [ ] Phase I-2 — GitHub Webhook 테스트 (Phase F 완료 후)
-- [ ] Phase I-3 — Dashboard 로그인 테스트 (브라우저 수동 확인 필요)
+- [ ] Phase I-2 — GitHub Webhook 테스트 (실제 PR로 확인 필요)
+- [x] Phase I-3 — Dashboard 로그인 테스트 완료
 - [x] Phase I-4 — CloudWatch 알람 15개 전체 OK
 
 ---
