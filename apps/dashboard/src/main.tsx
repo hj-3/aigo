@@ -9,6 +9,11 @@ import { queryClient } from './lib/query-client';
 import { AuthProvider } from './components/AuthProvider';
 import './index.css';
 
+// Use the current origin at runtime so OAuth redirect always matches the domain
+// the user actually accessed — works for CloudFront domain, custom domain, and localhost.
+// All these origins must be registered in Cognito allowed_callback_urls (managed by Terraform).
+const currentOrigin = `${window.location.origin}/`;
+
 Amplify.configure({
   Auth: {
     Cognito: {
@@ -18,8 +23,8 @@ Amplify.configure({
         oauth: {
           domain: import.meta.env.VITE_COGNITO_DOMAIN,
           scopes: ['email', 'openid', 'profile'],
-          redirectSignIn: [import.meta.env.VITE_REDIRECT_SIGN_IN],
-          redirectSignOut: [import.meta.env.VITE_REDIRECT_SIGN_OUT],
+          redirectSignIn: [currentOrigin],
+          redirectSignOut: [currentOrigin],
           responseType: 'code',
         },
       },

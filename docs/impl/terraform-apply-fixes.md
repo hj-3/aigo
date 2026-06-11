@@ -522,6 +522,226 @@ terraform apply
 
 ---
 
+## 18. CloudFront 403 Access Denied — S3 버킷 정책 충돌
+
+**증상**  
+CloudFront 도메인(`*.cloudfront.net`) 접속 시 `403 Access Denied` 응답.
+
+**원인**  
+`aigo-frontend` S3 버킷에 두 Terraform 리소스가 동일 버킷 정책을 관리:
+- `module.s3.aws_s3_bucket_policy.frontend` → `DenyNonTLS` (S3 모듈)
+- `module.cloudfront.aws_s3_bucket_policy.frontend_cf` → `AllowCloudFrontOAC` (CloudFront 모듈)
+
+S3 버킷은 정책이 하나뿐이므로 apply 순서에 따라 마지막 정책이 덮어씀.  
+S3 모듈 정책이 마지막이면 `AllowCloudFrontOAC`가 사라져 CloudFront가 S3 접근 불가 → 403.
+
+**수정**
+1. `modules/s3/main.tf` — `aws_s3_bucket_policy.frontend`(DenyNonTLS) 완전 제거
+2. `modules/cloudfront/main.tf` — `aws_s3_bucket_policy.frontend_cf`에 `DenyNonTLS` Statement 추가, 단일 정책으로 통합
+
+최종 정책 두 Statement:
+- `AllowCloudFrontOAC`: CloudFront OAC principal의 `s3:GetObject` 허용 (SourceArn 조건)
+- `DenyNonTLS`: 비TLS 요청 전체 Deny
+
+**원칙**: S3 버킷 정책은 하나의 Terraform 리소스만 관리해야 한다.
+
+---
+
+## 19. CloudFront 403 — S3 KMS 키 복호화 권한 누락
+
+**증상**  
+버킷 정책 통합(#18) 이후에도 `403 Forbidden` 지속.
+
+**원인**  
+`aigo-frontend` 버킷이 `aws:kms`(aigo-kms-s3)로 암호화됨.  
+CloudFront OAC가 S3 객체를 읽을 때 KMS 복호화가 필요하지만  
+`aws_kms_key.s3` 정책에 `cloudfront.amazonaws.com` principal이 없어 KMS 거부 → 403.
+
+버킷 정책(`s3:GetObject Allow`)과 KMS 키 정책은 **독립적**이며 둘 다 통과해야 접근 가능.
+
+**수정** (`modules/kms/main.tf` — `aws_kms_key.s3` 정책에 Statement 추가):
+```json
+{
+  "Sid": "AllowCloudFrontOAC",
+  "Effect": "Allow",
+  "Principal": { "Service": "cloudfront.amazonaws.com" },
+  "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+  "Resource": "*",
+  "Condition": {
+    "StringLike": {
+      "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"
+    }
+  }
+}
+```
+
+`StringEquals`(특정 ARN) 대신 `StringLike` + 계정 와일드카드 사용 이유:  
+CloudFront ARN을 KMS 모듈에서 참조하면 KMS → CF → S3 → KMS 순환 의존성 발생.
+
+**원칙**: OAC + SSE-KMS 조합은 버킷 정책 + KMS 키 정책 두 곳 모두 CloudFront 허용 필요.
+
+---
+
+## 20. CloudFront CSP 와일드카드 오류 + Google Fonts 차단
+
+**증상**
+```
+Content Security Policy 'connect-src' contains invalid source:
+  cognito-idp.*.amazonaws.com
+  *.execute-api.*.amazonaws.com
+style-src violates CSP: fonts.googleapis.com
+```
+
+**원인**  
+CloudFront Response Headers Policy(Terraform)의 CSP 문자열에 유효하지 않은 와일드카드 사용:
+- `cognito-idp.*.amazonaws.com` → 호스트명 중간 `*` 불가
+- `*.execute-api.*.amazonaws.com` → 복수 `*` 불가
+- `fonts.googleapis.com`, `fonts.gstatic.com` 미포함
+
+**수정** (`modules/cloudfront/main.tf` CSP 문자열):
+- `cognito-idp.ap-northeast-2.amazonaws.com` (리전 고정)
+- `*.execute-api.ap-northeast-2.amazonaws.com` (선두 `*`만 허용)
+- `style-src`에 `https://fonts.googleapis.com` 추가
+- `font-src 'self' https://fonts.gstatic.com` 추가
+
+CSP 와일드카드 규칙: 호스트명 맨 앞(`*.example.com`)만 허용.
+
+---
+
+## 21. Cognito redirect_mismatch — 콜백 URL 불일치
+
+**증상**
+```
+GET .../error?error=redirect_mismatch&client_id=...
+```
+
+**원인**  
+`module.cognito`의 `allowed_callback_urls`에 두 가지 문제:
+1. 등록된 경로가 `/auth/callback`이나 Amplify 실제 redirect는 `/`(루트)
+2. CloudFront 기본 도메인(`*.cloudfront.net`)이 목록에 없음
+
+Cognito는 `redirect_uri`가 허용 목록과 **완전 일치**하지 않으면 오류 반환.
+
+**수정** (`envs/prod/main.tf` — `module.cognito` 호출):
+```hcl
+allowed_callback_urls = compact([
+  "https://${module.cloudfront.distribution_domain}/",
+  var.domain_name != "" ? "https://app.${var.domain_name}/" : "",
+  "http://localhost:5173/",
+])
+```
+
+`compact()`로 `domain_name`이 빈 문자열일 때 생기는 빈 항목 제거.
+
+**원칙**: Amplify Auth의 기본 redirect URI는 `/`(루트). 별도 경로 지정 시 Cognito 등록과 완전 일치해야 한다.
+
+---
+
+## 22. Cognito 관리형 로그인 미적용 — managed_login_version 누락
+
+**증상**  
+`aws_cognito_managed_login_branding` 추가 후 Terraform apply 완료했으나  
+로그인 화면이 레거시(Classic Hosted UI) 스타일 유지.
+
+**원인**  
+관리형 로그인 활성화에는 브랜딩 리소스 단독으로 부족하고  
+`aws_cognito_user_pool_domain`에 `managed_login_version = 2`가 추가로 필요.
+
+**수정** (`modules/cognito/main.tf`):
+```hcl
+resource "aws_cognito_user_pool_domain" "main" {
+  domain                = var.domain_prefix
+  user_pool_id          = aws_cognito_user_pool.main.id
+  managed_login_version = 2
+}
+
+resource "aws_cognito_managed_login_branding" "main" {
+  user_pool_id                = aws_cognito_user_pool.main.id
+  client_id                   = aws_cognito_user_pool_client.dashboard.id
+  use_cognito_provided_values = true
+}
+```
+
+AWS provider `~> 6.0` 필요.
+
+**원칙**: Cognito 관리형 로그인은 domain 리소스의 `managed_login_version = 2` + branding 리소스 두 가지 모두 필요.
+
+---
+
+## 23. Terraform 순환 의존성 — Cognito ↔ CloudFront 상호 참조
+
+**증상**
+```
+Error: Cycle: module.cognito.aws_cognito_user_pool_domain.main,
+       module.cloudfront.aws_cloudfront_distribution.main,
+       module.cognito.aws_cognito_user_pool_client.dashboard
+```
+
+**원인**  
+`envs/prod/main.tf`에서 두 모듈 상호 참조:
+- `module.cloudfront` → `module.cognito.domain` (CSP 헤더)
+- `module.cognito` → `module.cloudfront.distribution_domain` (callback URL)
+
+**수정** (`envs/prod/main.tf`):  
+CloudFront 모듈의 `cognito_domain`을 module 참조 → 직접 문자열로 전환:
+
+```hcl
+module "cloudfront" {
+  # before: cognito_domain = "${module.cognito.domain}.auth.ap-northeast-2.amazoncognito.com"
+  cognito_domain = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
+}
+```
+
+`domain_prefix`가 `"${var.project}-auth"` 고정값이므로 직접 구성 가능.  
+`envs/prod/outputs.tf`에 `cognito_domain` 출력 추가하여 런타임 검증.
+
+**원칙**: Terraform 모듈 간 상호 참조는 순환 의존성 원인. 한쪽을 직접 문자열로 끊어야 한다.
+
+---
+
+## 24. Cognito OAuth "redirect is coming from a different origin"
+
+**증상**
+```
+AgentOps 로그인 오류
+redirect is coming from a different origin.
+The oauth flow needs to be initiated from the same origin.
+```
+
+**환경**: Route53 커스텀 도메인(`app.seolphung.com`) 연결 후 발생.
+
+**원인**  
+`apps/dashboard/src/main.tsx`에서 Amplify의 `redirectSignIn/Out`이 빌드 타임 env var  
+`VITE_REDIRECT_SIGN_IN = https://d14fywc3dbqqf3.cloudfront.net/`으로 고정됨.
+
+사용자가 `https://app.seolphung.com`으로 접속하면:
+- 접속 origin: `app.seolphung.com`
+- Cognito가 redirect하는 URL: `d14fywc3dbqqf3.cloudfront.net`
+- 두 origin 불일치 → Amplify OAuth 미들웨어 차단
+
+Cognito `allowed_callback_urls`에는 두 도메인 모두 등록되어 있어 Cognito 측 문제는 아님.  
+문제는 Amplify가 현재 origin과 redirect URL origin이 다르면 흐름을 차단하는 것.
+
+**수정** (`apps/dashboard/src/main.tsx`):
+```typescript
+// before
+redirectSignIn: [import.meta.env.VITE_REDIRECT_SIGN_IN],
+redirectSignOut: [import.meta.env.VITE_REDIRECT_SIGN_OUT],
+
+// after — 런타임에 현재 origin 사용
+const currentOrigin = `${window.location.origin}/`;
+redirectSignIn: [currentOrigin],
+redirectSignOut: [currentOrigin],
+```
+
+`.github/workflows/cd-deploy.yml`에서 `VITE_REDIRECT_SIGN_IN/OUT` 빌드 env var 제거.
+
+**원칙**: Amplify OAuth redirect URL은 빌드 타임 고정값이 아닌 런타임 `window.location.origin`으로 설정해야  
+커스텀 도메인 추가·변경 시 재빌드 없이 자동 대응된다. Cognito `allowed_callback_urls`에는  
+접속 가능한 모든 origin이 사전 등록되어 있어야 한다.
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.

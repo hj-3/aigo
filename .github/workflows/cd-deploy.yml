@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       component:
-        description: 'Component to deploy (all | infra | agents | api | dashboard)'
-        required: true
+        description: 'Component to deploy (all | infra | api | dashboard)'
+        required: false
         default: 'all'
 
 permissions:
@@ -27,12 +27,45 @@ env:
 
 jobs:
   # ──────────────────────────────────────────────────────
+  # 0. Detect changed components
+  # ──────────────────────────────────────────────────────
+  detect-changes:
+    name: Detect Changed Components
+    runs-on: ubuntu-latest
+    outputs:
+      infra:     ${{ steps.diff.outputs.infra }}
+      api:       ${{ steps.diff.outputs.api }}
+      dashboard: ${{ steps.diff.outputs.dashboard }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine changed components
+        id: diff
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            COMP="${{ inputs.component }}"
+            echo "infra=$(    [[ "$COMP" == "all" || "$COMP" == "infra"     ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "api=$(      [[ "$COMP" == "all" || "$COMP" == "api"       ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "dashboard=$(  [[ "$COMP" == "all" || "$COMP" == "dashboard" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD)
+            echo "Changed files:"
+            echo "$FILES"
+            grep -qE "^infra/"                                                          <<< "$FILES" && echo "infra=true"     >> "$GITHUB_OUTPUT" || echo "infra=false"     >> "$GITHUB_OUTPUT"
+            grep -qE "^(connectors|workers/lightweight|apps/dashboard-api|packages)/"  <<< "$FILES" && echo "api=true"       >> "$GITHUB_OUTPUT" || echo "api=false"       >> "$GITHUB_OUTPUT"
+            grep -qE "^(apps/dashboard|packages)/"                                     <<< "$FILES" && echo "dashboard=true" >> "$GITHUB_OUTPUT" || echo "dashboard=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ──────────────────────────────────────────────────────
   # 1. Infrastructure (Terraform apply)
   # ──────────────────────────────────────────────────────
   deploy-infra:
     name: Deploy Infrastructure
     runs-on: ubuntu-latest
-    if: ${{ inputs.component == 'all' || inputs.component == 'infra' || github.event_name == 'push' }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.infra == 'true'
     environment: production
     outputs:
       cognito_user_pool_id: ${{ steps.tf-outputs.outputs.cognito_user_pool_id }}
@@ -119,7 +152,11 @@ jobs:
   deploy-api:
     name: Deploy Lambda Functions
     runs-on: ubuntu-latest
-    needs: deploy-infra
+    needs: [detect-changes, deploy-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.api == 'true'
     environment: production
     strategy:
       fail-fast: false
@@ -164,7 +201,11 @@ jobs:
   deploy-heavy-worker:
     name: Deploy Heavy Worker (ECS)
     runs-on: ubuntu-latest
-    needs: deploy-infra
+    needs: [detect-changes, deploy-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.api == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
@@ -212,10 +253,36 @@ jobs:
   deploy-dashboard:
     name: Deploy Dashboard (S3)
     runs-on: ubuntu-latest
-    needs: deploy-infra
+    needs: [detect-changes, deploy-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.dashboard == 'true'
     environment: production
     steps:
       - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      - name: Read Terraform outputs
+        id: tf-out
+        working-directory: infra/terraform/envs/prod
+        run: |
+          terraform init -reconfigure -input=false
+          echo "cognito_user_pool_id=$(terraform output -raw cognito_user_pool_id)" >> "$GITHUB_OUTPUT"
+          echo "cognito_client_id=$(terraform output -raw cognito_client_id)"       >> "$GITHUB_OUTPUT"
+          echo "cognito_domain=$(terraform output -raw cognito_domain)"             >> "$GITHUB_OUTPUT"
+          echo "cloudfront_domain=$(terraform output -raw cloudfront_domain)"       >> "$GITHUB_OUTPUT"
 
       - name: Setup Node.js + pnpm
         uses: actions/setup-node@v4
@@ -229,17 +296,9 @@ jobs:
           pnpm -F "@aigo/dashboard" build
         env:
           VITE_API_URL:               ${{ secrets.API_GATEWAY_URL }}
-          VITE_COGNITO_USER_POOL_ID:  ${{ needs.deploy-infra.outputs.cognito_user_pool_id }}
-          VITE_COGNITO_CLIENT_ID:     ${{ needs.deploy-infra.outputs.cognito_client_id }}
-          VITE_COGNITO_DOMAIN:        ${{ needs.deploy-infra.outputs.cognito_domain }}
-          VITE_REDIRECT_SIGN_IN:      https://${{ needs.deploy-infra.outputs.cloudfront_domain }}/
-          VITE_REDIRECT_SIGN_OUT:     https://${{ needs.deploy-infra.outputs.cloudfront_domain }}/
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          VITE_COGNITO_USER_POOL_ID:  ${{ steps.tf-out.outputs.cognito_user_pool_id }}
+          VITE_COGNITO_CLIENT_ID:     ${{ steps.tf-out.outputs.cognito_client_id }}
+          VITE_COGNITO_DOMAIN:        ${{ steps.tf-out.outputs.cognito_domain }}
 
       - name: Sync to S3
         run: |
