@@ -91,26 +91,3 @@ resource "aws_s3_bucket_acl" "logs" {
   depends_on = [aws_s3_bucket_ownership_controls.logs]
 }
 
-# Block all public access for frontend too — served via CloudFront OAC, not directly
-resource "aws_s3_bucket_policy" "frontend" {
-  bucket = aws_s3_bucket.buckets["frontend"].id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid       = "DenyNonTLS"
-        Effect    = "Deny"
-        Principal = "*"
-        Action    = "s3:*"
-        Resource = [
-          "${aws_s3_bucket.buckets["frontend"].arn}",
-          "${aws_s3_bucket.buckets["frontend"].arn}/*"
-        ]
-        Condition = {
-          Bool = { "aws:SecureTransport" = "false" }
-        }
-      }
-    ]
-  })
-}

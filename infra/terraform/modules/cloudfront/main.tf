@@ -135,7 +135,7 @@ resource "aws_cloudfront_response_headers_policy" "security" {
   }
 }
 
-# Allow CloudFront to read from S3
+# Single bucket policy: OAC allow + TLS-only enforcement
 resource "aws_s3_bucket_policy" "frontend_cf" {
   bucket = var.frontend_bucket_id
 
@@ -152,6 +152,19 @@ resource "aws_s3_bucket_policy" "frontend_cf" {
           StringEquals = {
             "AWS:SourceArn" = aws_cloudfront_distribution.main.arn
           }
+        }
+      },
+      {
+        Sid       = "DenyNonTLS"
+        Effect    = "Deny"
+        Principal = "*"
+        Action    = "s3:*"
+        Resource = [
+          var.frontend_bucket_arn,
+          "${var.frontend_bucket_arn}/*"
+        ]
+        Condition = {
+          Bool = { "aws:SecureTransport" = "false" }
         }
       }
     ]

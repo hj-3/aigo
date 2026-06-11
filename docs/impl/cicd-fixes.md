@@ -751,3 +751,28 @@ aws ecs describe-task-definition \
 
 aws ecs register-task-definition --cli-input-json file://new-task-def.json
 ```
+
+---
+
+## 24. CloudFront 403 Access Denied — S3 버킷 정책 충돌
+
+**증상**  
+CloudFront 도메인(`*.cloudfront.net`) 접속 시 `403 Access Denied` 응답.
+
+**원인**  
+`aigo-frontend` S3 버킷에 두 개의 Terraform 리소스가 동일 버킷 정책을 관리:
+- `module.s3.aws_s3_bucket_policy.frontend` → `DenyNonTLS` (S3 모듈)
+- `module.cloudfront.aws_s3_bucket_policy.frontend_cf` → `AllowCloudFrontOAC` (CloudFront 모듈)
+
+S3 버킷은 정책이 하나뿐이므로 `terraform apply` 실행 순서에 따라 마지막으로 적용된 정책이 덮어씀.  
+S3 모듈 정책이 마지막으로 적용되면 `AllowCloudFrontOAC` 가 사라져서 CloudFront가 S3 접근 불가 → 403.
+
+**수정**
+1. `modules/s3/main.tf` — `aws_s3_bucket_policy.frontend` 리소스(DenyNonTLS) 완전 제거
+2. `modules/cloudfront/main.tf` — `aws_s3_bucket_policy.frontend_cf`에 `DenyNonTLS` Statement 추가하여 단일 정책으로 통합
+
+최종 정책 두 Statement:
+- `AllowCloudFrontOAC`: CloudFront OAC principal이 `s3:GetObject` 허용 (SourceArn 조건)
+- `DenyNonTLS`: 비TLS(`aws:SecureTransport = false`) 요청 전체 Deny (보안 강화)
+
+**원칙**: S3 버킷 정책은 하나의 Terraform 리소스만 관리해야 한다. 여러 모듈이 같은 버킷 정책을 건드리면 적용 순서에 따라 하나가 소실된다.
