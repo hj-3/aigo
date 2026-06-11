@@ -774,3 +774,25 @@ Vite 빌드 시 `import.meta.env.VITE_*` 값이 `undefined`로 번들링되어 A
 - `cloudfront` 모듈에 `cognito_domain` 변수 추가 → `envs/prod/main.tf`에서 전달
 
 **원칙**: Vite 빌드 타임 env var(`VITE_*`)는 빌드 스텝 `env:` 블록에 명시적으로 전달해야 한다. Terraform 출력값은 `terraform output -raw`로 읽어 `GITHUB_OUTPUT`에 저장 후 job outputs로 전파한다.
+
+---
+
+## 25. CD Terraform — route53:ListHostedZones AccessDenied
+
+**오류**
+```
+AccessDenied: User: .../aigo-github-actions-deploy/GitHubActions is not authorized 
+to perform: route53:ListHostedZones
+```
+
+**원인**  
+`data "aws_route53_zone"` 및 `data "aws_acm_certificate"` 조회에 Route53/ACM 읽기 권한 필요.  
+`github_actions_tf_platform` IAM 정책에 해당 액션 미포함.
+
+**수정** (`global/iam/main.tf`):
+```hcl
+{ Sid = "Route53Full", Effect = "Allow", Action = ["route53:*"], Resource = "*" },
+{ Sid = "ACMRead",     Effect = "Allow", Action = ["acm:ListCertificates", "acm:DescribeCertificate", "acm:GetCertificate"], Resource = "*" },
+```
+
+**원칙**: 새 data source(Route53, ACM 등) 추가 시 `global/iam`의 GitHub Actions 정책에 읽기 권한을 함께 추가한다.
