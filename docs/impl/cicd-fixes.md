@@ -776,3 +776,38 @@ S3 모듈 정책이 마지막으로 적용되면 `AllowCloudFrontOAC` 가 사라
 - `DenyNonTLS`: 비TLS(`aws:SecureTransport = false`) 요청 전체 Deny (보안 강화)
 
 **원칙**: S3 버킷 정책은 하나의 Terraform 리소스만 관리해야 한다. 여러 모듈이 같은 버킷 정책을 건드리면 적용 순서에 따라 하나가 소실된다.
+
+---
+
+## 25. CloudFront 403 — S3 KMS 키 복호화 권한 누락
+
+**증상**  
+버킷 정책 수정(#24) 이후에도 CloudFront 도메인에서 `403 Forbidden` 지속.
+
+**원인**  
+S3 `aigo-frontend` 버킷이 `aws:kms`(aigo-kms-s3 키)로 암호화됨.  
+CloudFront OAC가 S3 객체를 읽을 때 KMS 복호화가 필요하지만, `aws_kms_key.s3` 정책에 `cloudfront.amazonaws.com` principal이 없어 KMS가 복호화를 거부 → S3가 403 반환.
+
+버킷 정책(s3:GetObject Allow)과 KMS 키 정책은 **독립적**이며 둘 다 통과해야 접근 가능.
+
+**수정** (`modules/kms/main.tf` — `aws_kms_key.s3` 정책에 추가):
+```json
+{
+  "Sid": "AllowCloudFrontOAC",
+  "Effect": "Allow",
+  "Principal": { "Service": "cloudfront.amazonaws.com" },
+  "Action": ["kms:Decrypt", "kms:GenerateDataKey*"],
+  "Resource": "*",
+  "Condition": {
+    "StringLike": {
+      "AWS:SourceArn": "arn:aws:cloudfront::ACCOUNT_ID:distribution/*"
+    }
+  }
+}
+```
+
+`StringEquals`(특정 distribution ARN) 대신 `StringLike` + 계정 와일드카드 사용 이유:  
+CloudFront distribution ARN을 KMS 모듈에서 참조하면 KMS → CF → S3 → KMS 순환 의존성 발생.  
+동일 계정 내 모든 distribution으로 범위 제한(계정 수준 최소 권한).
+
+**원칙**: OAC + SSE-KMS 조합은 버킷 정책 + KMS 키 정책 두 곳 모두 CloudFront 허용 필요.
