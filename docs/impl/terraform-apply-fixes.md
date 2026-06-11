@@ -832,6 +832,31 @@ aws lambda update-function-configuration --function-name aigo-dashboard-api \
 
 ---
 
+## 27. ALLOWED_ORIGINS — CloudFront output 이름 오류
+
+**오류**
+```
+Error: Unsupported attribute
+  on main.tf line 142: ALLOWED_ORIGINS = "...${module.cloudfront.distribution_domain_name}"
+This object does not have an attribute named "distribution_domain_name".
+```
+
+**원인**  
+`modules/cloudfront/outputs.tf`의 실제 output 이름은 `distribution_domain`인데  
+`main.tf`에서 `distribution_domain_name`으로 잘못 참조.
+
+**수정** (`envs/prod/main.tf`):
+```hcl
+# before
+ALLOWED_ORIGINS = "https://app.seolphung.com,https://${module.cloudfront.distribution_domain_name}"
+# after
+ALLOWED_ORIGINS = "https://app.seolphung.com,https://${module.cloudfront.distribution_domain}"
+```
+
+**원칙**: 모듈 output을 참조하기 전에 `modules/*/outputs.tf`에서 정확한 이름을 확인한다.
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.
