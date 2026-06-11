@@ -109,12 +109,14 @@ module "cognito" {
   project       = var.project
   domain_prefix = "${var.project}-auth"
   allowed_callback_urls = compact([
-    "https://app.${var.domain_name}/auth/callback",
-    "http://localhost:5173/auth/callback",
+    "https://${module.cloudfront.distribution_domain}/",
+    var.domain_name != "" ? "https://app.${var.domain_name}/" : "",
+    "http://localhost:5173/",
   ])
   allowed_logout_urls = compact([
-    "https://app.${var.domain_name}",
-    "http://localhost:5173",
+    "https://${module.cloudfront.distribution_domain}/",
+    var.domain_name != "" ? "https://app.${var.domain_name}/" : "",
+    "http://localhost:5173/",
   ])
 }
 
@@ -363,7 +365,7 @@ module "cloudfront" {
   frontend_bucket_arn = module.s3.bucket_arns["frontend"]
   api_domain          = replace(module.api_gateway.stage_invoke_url, "https://", "")
   domain_name         = var.domain_name
-  cognito_domain      = "${module.cognito.domain}.auth.ap-northeast-2.amazoncognito.com"
+  cognito_domain      = "${var.project}-auth.auth.ap-northeast-2.amazoncognito.com"
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
