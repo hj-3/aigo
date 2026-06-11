@@ -857,6 +857,37 @@ ALLOWED_ORIGINS = "https://app.seolphung.com,https://${module.cloudfront.distrib
 
 ---
 
+## 28. API Gateway 라우트 ConflictException — Terraform 상태 미등록
+
+**오류**
+```
+ConflictException: Route with key GET /dashboard/stats already exists for this API
+ConflictException: Route with key GET /repositories already exists for this API
+```
+
+**원인**  
+이전 세션에서 `terraform apply -target=module.api_gateway`로 두 라우트를 직접 생성했으나  
+S3 Terraform state에는 기록되지 않아 다음 full apply 시 재생성 시도 → 409 충돌.
+
+**수정** — 두 라우트를 Terraform state에 import:
+```bash
+# API Gateway ID 및 Route ID 조회
+API_ID=$(aws apigatewayv2 get-apis --region ap-northeast-2 \
+  --query "Items[?contains(Name,'aigo')].ApiId | [0]" --output text)
+
+aws apigatewayv2 get-routes --region ap-northeast-2 --api-id "$API_ID" \
+  --query "Items[?RouteKey=='GET /dashboard/stats' || RouteKey=='GET /repositories'].{Key:RouteKey,Id:RouteId}"
+
+# import (API_ID/ROUTE_ID 형식)
+terraform import 'module.api_gateway.aws_apigatewayv2_route.routes["GET /dashboard/stats"]' 'jxvucbg4c0/x520bza'
+terraform import 'module.api_gateway.aws_apigatewayv2_route.routes["GET /repositories"]'    'jxvucbg4c0/at9mvap'
+```
+
+**원칙**: `terraform apply -target`으로 일부 리소스를 수동 생성한 경우 state에 자동 등록되므로 충돌 없음.  
+그러나 AWS 콘솔이나 CLI로 직접 생성한 리소스는 반드시 `terraform import`로 state에 가져와야 한다.
+
+---
+
 ## 참고: terraform init 재실행 필요한 경우
 
 `required_providers`를 추가하거나 제거한 경우 `terraform init`을 재실행해야 한다.
