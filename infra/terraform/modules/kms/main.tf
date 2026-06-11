@@ -68,6 +68,18 @@ resource "aws_kms_key" "s3" {
         Principal = { Service = "s3.amazonaws.com" }
         Action    = ["kms:GenerateDataKey*", "kms:Decrypt"]
         Resource  = "*"
+      },
+      {
+        Sid       = "AllowCloudFrontOAC"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = ["kms:Decrypt", "kms:GenerateDataKey*"]
+        Resource  = "*"
+        Condition = {
+          StringLike = {
+            "AWS:SourceArn" = "arn:aws:cloudfront::${var.aws_account_id}:distribution/*"
+          }
+        }
       }
     ]
   })
