@@ -84,7 +84,7 @@ module "bedrock_agentcore" {
   knowledge_base_arns   = [module.bedrock_kb.knowledge_base_arn]
   s3_agent_packages_arn = module.s3.bucket_arns["agent_packages"]
   kms_key_arn           = module.kms.lambda_key_arn
-  foundation_model      = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  foundation_model      = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
   agent_instructions = {
     orchestrator   = file("${path.root}/../../../../prompts/v1/orchestrator.md")

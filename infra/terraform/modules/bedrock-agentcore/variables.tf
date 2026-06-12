@@ -13,7 +13,7 @@ variable "aws_account_id" {
 variable "foundation_model" {
   description = "Bedrock foundation model ID for all agents (must be an APAC inference profile for ap-northeast-2)"
   type        = string
-  default     = "apac.anthropic.claude-3-5-sonnet-20241022-v2:0"
+  default     = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 }
 
 variable "knowledge_base_arns" {
