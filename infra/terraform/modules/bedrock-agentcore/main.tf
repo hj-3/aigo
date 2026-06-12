@@ -62,7 +62,9 @@ resource "aws_iam_role_policy" "bedrock_agent" {
         Resource = [
           "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
           "arn:aws:bedrock:*::foundation-model/apac.*",
-          "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/*"
+          "arn:aws:bedrock:::foundation-model/*",
+          "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/*",
+          "arn:aws:bedrock:*:${var.aws_account_id}:inference-profile/*"
         ]
       },
       {
