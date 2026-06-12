@@ -1,3 +1,5 @@
+// DEPRECATED: Lightweight worker now dispatches to the orchestrator Lambda (lambda-client.ts).
+// Kept for reference. Remove after confirming no other callers.
 import { BedrockAgentRuntimeClient, InvokeAgentCommand } from '@aws-sdk/client-bedrock-agent-runtime';
 import { getLogger } from '@aigo/logger';
 import { Config } from '@aigo/aws-clients';

@@ -6,16 +6,17 @@ Lightweight Worker (TypeScript Lambda)와 Heavy Worker (Python ECS Fargate) 구�
 ## workers/lightweight (TypeScript Lambda)
 
 ### 역할
-SQS analysis-queue를 소비하여 PR diff를 가져오고 AgentCore Orchestrator를 호출합니다.
+SQS analysis-queue를 소비하여 PR diff를 가져오고 Orchestrator Lambda를 비동기 호출합니다.
 
 ### 파일 구조
 ```
 src/
-  index.ts          — SQS handler, partial batch response
-  handler.ts        — 단일 레코드 처리 로직
-  diff-fetcher.ts   — GitHub API로 PR diff 조회 + S3 저장
-  github-auth.ts    — GitHub App JWT → Installation Token
-  agentcore-client.ts — Bedrock AgentCore InvokeAgent
+  index.ts             — SQS handler, partial batch response
+  handler.ts           — 단일 레코드 처리 로직
+  diff-fetcher.ts      — GitHub API로 PR diff 조회 + S3 저장
+  github-auth.ts       — GitHub App JWT → Installation Token
+  lambda-client.ts     — Orchestrator Lambda InvokeFunction (Event 방식)
+  agentcore-client.ts  — DEPRECATED (Bedrock AgentCore 직접 호출, 미사용)
 ```
 
 ### Flow
@@ -25,13 +26,20 @@ src/
 4. GitHub App Installation Token 발급 (JWT → /app/installations/{id}/access_tokens)
 5. Octokit으로 PR diff, files, commits 조회
 6. diff를 S3 diffs 버킷에 저장
-7. Bedrock AgentCore InvokeAgent 호출 (Orchestrator)
-8. 응답을 S3 agent-outputs 버킷에 저장
-9. AnalysisJob에 agentSessionId 업데이트
+7. `Lambda.invoke(InvocationType=Event)`로 Orchestrator Lambda 비동기 호출
+   - 이후 분석 파이프라인은 Orchestrator Lambda가 독립적으로 처리
+8. 함수 정상 종료 (SQS 메시지 삭제)
+
+> **설계 변경 이유 (2026-06-12):** 기존에는 InvokeAgent (Bedrock AgentCore runtime)를
+> 직접 호출했으나 Action Group = 0 → Strands 도구 실행 불가 문제 발견.
+> Orchestrator Python Lambda를 별도 배포하고 Strands SDK를 Lambda 내에서 실행하는
+> 구조로 전환. 서브에이전트(Bedrock Agents)는 여전히 사용하되 diff 내용을 프롬프트에
+> 직접 포함하는 방식으로 Action Group 의존성 제거.
 
 ### 에러 처리
 - SQSBatchResponse로 개별 실패 레코드만 재시도
-- ConditionalCheckFailedException = 중복 처리 방지
+- ConditionalCheckFailedException = 중복 처리 방지 (PENDING → IN_PROGRESS 조건 체크)
+- Orchestrator Lambda 오류는 Lambda 자체 재시도 정책으로 처리 (DLQ 연결)
 
 ## workers/heavy (Python ECS Fargate)
 

@@ -290,21 +290,45 @@ module "lambda_dashboard_api" {
 }
 
 module "lambda_lightweight_worker" {
-  source                = "../../modules/lambda"
-  project               = var.project
-  function_name         = "lightweight-worker"
-  description           = "SQS-triggered analysis worker (fetches PR diff, triggers agents)"
-  handler               = "index.handler"
-  runtime               = "nodejs22.x"
-  memory_size           = 1024
-  timeout               = 900
-  s3_bucket             = module.s3.bucket_names["artifacts"]
-  s3_key                = "lambda/lightweight-worker/latest.zip"
-  kms_key_arn           = module.kms.lambda_key_arn
-  role_arn              = data.terraform_remote_state.iam.outputs.lambda_worker_role_arn
-  subnet_ids            = local.lambda_vpc.subnet_ids
-  security_group_ids    = local.lambda_vpc.security_group_ids
-  environment_variables = local.lambda_common_env
+  source             = "../../modules/lambda"
+  project            = var.project
+  function_name      = "lightweight-worker"
+  description        = "SQS-triggered analysis worker (fetches PR diff, dispatches to orchestrator)"
+  handler            = "index.handler"
+  runtime            = "nodejs22.x"
+  memory_size        = 1024
+  timeout            = 120
+  s3_bucket          = module.s3.bucket_names["artifacts"]
+  s3_key             = "lambda/lightweight-worker/latest.zip"
+  kms_key_arn        = module.kms.lambda_key_arn
+  role_arn           = data.terraform_remote_state.iam.outputs.lambda_worker_role_arn
+  subnet_ids         = local.lambda_vpc.subnet_ids
+  security_group_ids = local.lambda_vpc.security_group_ids
+  environment_variables = merge(local.lambda_common_env, {
+    ORCHESTRATOR_FUNCTION_NAME = "${var.project}-orchestrator"
+  })
+}
+
+module "lambda_orchestrator" {
+  source             = "../../modules/lambda"
+  project            = var.project
+  function_name      = "orchestrator"
+  description        = "Strands orchestrator agent — coordinates PR analysis sub-agents"
+  handler            = "lambda_handler.handler"
+  runtime            = "python3.12"
+  memory_size        = 3008
+  timeout            = 900
+  s3_bucket          = module.s3.bucket_names["artifacts"]
+  s3_key             = "lambda/orchestrator/latest.zip"
+  kms_key_arn        = module.kms.lambda_key_arn
+  role_arn           = data.terraform_remote_state.iam.outputs.lambda_orchestrator_role_arn
+  subnet_ids         = local.lambda_vpc.subnet_ids
+  security_group_ids = local.lambda_vpc.security_group_ids
+  environment_variables = merge(local.lambda_common_env, {
+    MODEL_ID       = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    DASHBOARD_URL  = "https://app.seolphung.com"
+    BEDROCK_KB_ID  = module.bedrock_kb.knowledge_base_id
+  })
 }
 
 module "lambda_notification_worker" {
@@ -489,6 +513,7 @@ module "monitoring" {
     "${var.project}-dashboard-cmd",
     "${var.project}-lightweight-worker",
     "${var.project}-notification-worker",
+    "${var.project}-orchestrator",
   ]
 
   sqs_dlq_names = [

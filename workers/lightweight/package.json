@@ -17,7 +17,7 @@
     "@aigo/aws-clients": "workspace:*",
     "@aigo/logger": "workspace:*",
     "@aigo/types": "workspace:*",
-    "@aws-sdk/client-bedrock-agent-runtime": "^3.758.0",
+    "@aws-sdk/client-lambda": "^3.758.0",
     "@octokit/rest": "^21.0.0",
     "zod": "^3.23.0"
   },

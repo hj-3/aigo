@@ -2,8 +2,7 @@ import type { SQSRecord } from 'aws-lambda';
 import { ddbGet, ddbUpdate, s3PutObject, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import { fetchAndStorePrDiff } from './diff-fetcher.js';
-import { invokeAgent, getOrchestratorAgentId, getOrchestratorAgentAliasId } from './agentcore-client.js';
-import { randomUUID } from 'node:crypto';
+import { invokeOrchestratorAsync } from './lambda-client.js';
 
 interface AnalysisQueueMessage {
   readonly type: 'ANALYSIS_REQUESTED';
@@ -33,6 +32,7 @@ interface RepositoryRecord {
   readonly orgId: string;
   readonly providerRepoFullName: string;
   readonly defaultBranch: string;
+  readonly installationId?: string;
 }
 
 export async function processRecord(record: SQSRecord): Promise<void> {
@@ -74,8 +74,8 @@ export async function processRecord(record: SQSRecord): Promise<void> {
 
   await s3PutObject(Config.s3.diffsBucket, prContext.diffS3Key, diff.diffContent, 'text/plain');
 
-  // ── 4. Build orchestrator input and invoke AgentCore ─────────────────────
-  const agentInput = JSON.stringify({
+  // ── 4. Build orchestrator input ───────────────────────────────────────────
+  const orchestratorInput = {
     jobId,
     orgId,
     repoId,
@@ -84,6 +84,7 @@ export async function processRecord(record: SQSRecord): Promise<void> {
       ...prContext,
       repoFullName: repo.providerRepoFullName,
       defaultBranch: repo.defaultBranch,
+      installationId: repo.installationId ?? '',
     },
     diffMetadata: {
       changedFiles: diff.changedFiles,
@@ -93,40 +94,12 @@ export async function processRecord(record: SQSRecord): Promise<void> {
       s3Key: prContext.diffS3Key,
       s3Bucket: Config.s3.diffsBucket,
     },
-  });
+  };
 
-  log.info('Invoking orchestrator agent', { agentId: getOrchestratorAgentId() });
+  // ── 5. Invoke orchestrator Lambda asynchronously ──────────────────────────
+  // The orchestrator handles: sub-agent analysis → DynamoDB → GitHub comment → Slack
+  log.info('Dispatching to orchestrator Lambda');
+  await invokeOrchestratorAsync(orchestratorInput);
 
-  const agentResponse = await invokeAgent({
-    agentId: getOrchestratorAgentId(),
-    agentAliasId: getOrchestratorAgentAliasId(),
-    sessionId: `${jobId}-${randomUUID()}`,
-    inputText: agentInput,
-  });
-
-  // ── 5. Store raw agent output to S3 ──────────────────────────────────────
-  const outputS3Key = `agent-outputs/${orgId}/${repoId}/${jobId}/orchestrator-response.json`;
-  await s3PutObject(
-    Config.s3.agentOutputsBucket,
-    outputS3Key,
-    JSON.stringify({ completion: agentResponse.completion, sessionId: agentResponse.sessionId }),
-  );
-
-  // ── 6. Update job with agent session reference ────────────────────────────
-  await ddbUpdate({
-    TableName: Config.tableName('AnalysisJobs'),
-    Key: { PK: `JOB#${jobId}`, SK: 'METADATA' },
-    UpdateExpression: 'SET agentSessionId = :sessionId, agentOutputS3Key = :s3Key, updatedAt = :now',
-    ExpressionAttributeValues: {
-      ':sessionId': agentResponse.sessionId,
-      ':s3Key': outputS3Key,
-      ':now': new Date().toISOString(),
-    },
-  });
-
-  log.info('Analysis job dispatched to AgentCore', {
-    jobId,
-    sessionId: agentResponse.sessionId,
-    outputS3Key,
-  });
+  log.info('Analysis job dispatched to orchestrator', { jobId });
 }

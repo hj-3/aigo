@@ -116,3 +116,4 @@ new-task-def.json
 *.tar.gz
 lambda.zip
 layer.zip
+.build/

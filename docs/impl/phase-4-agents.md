@@ -6,22 +6,32 @@ AWS Bedrock AgentCore에서 실행되는 7개 Strands Python Agent 구현.
 
 ## 에이전트 목록
 
-### 1. Orchestrator Agent
-**역할:** PR 분석 조율, 4개 서브에이전트 병렬 호출, 최종 리포트 생성
+### 1. Orchestrator Agent (Python Lambda + Strands SDK)
+**역할:** PR 분석 조율, 4개 서브에이전트 순차 호출, 최종 리포트 생성
+
+**배포 방식:** `aigo-orchestrator` Python Lambda (runtime: python3.12, timeout: 900s)  
+진입점: `agents/orchestrator/lambda_handler.py` → `src/agent.run_analysis()`  
+빌드: `scripts/deploy-orchestrator.sh`
 
 **도구:**
-- subagent_tools.invoke_code_reviewer
-- subagent_tools.invoke_infra_reviewer
-- subagent_tools.invoke_risk_reviewer
-- subagent_tools.invoke_security_agent
+- subagent_tools.invoke_code_reviewer (diff_content 직접 주입)
+- subagent_tools.invoke_infra_reviewer (diff_content 직접 주입)
+- subagent_tools.invoke_risk_reviewer (diff_content 직접 주입)
+- subagent_tools.invoke_security_agent (diff_content 직접 주입)
 - ddb_tools.save_report
 - ddb_tools.save_findings
 - ddb_tools.update_job_status
 - slack_tools.notify_analysis_complete
 - github_tools.post_pr_comment
-- pr_tools.get_diff_content
 
-**max_parallel_steps=4** — 4개 서브에이전트 동시 실행
+> **서브에이전트 호출 패턴:** 각 서브에이전트(Bedrock Agent)는 Action Group 없이 순수 LLM 추론만 수행.
+> diff 내용을 `InvokeAgent` 프롬프트에 직접 포함하여 pr_tools Action Group 의존성 제거.
+
+**IAM 역할:** `aigo-orchestrator-role`
+- bedrock:InvokeModel (Claude 3.5 Sonnet v1)
+- bedrock:InvokeAgent (서브에이전트 호출)
+- bedrock:Retrieve (Knowledge Base)
+- dynamodb, s3, secretsmanager, kms
 
 ### 2. Code Reviewer Agent
 **역할:** 코드 품질, 에러 처리, 테스트 커버리지, 성능, 문서화
@@ -83,12 +93,16 @@ AWS Bedrock AgentCore에서 실행되는 7개 Strands Python Agent 구현.
 ### 모델 설정
 ```python
 BedrockModel(
-    model_id="us.anthropic.claude-sonnet-4-6-20250514-v1:0",
+    model_id="anthropic.claude-3-5-sonnet-20240620-v1:0",  # ap-northeast-2 온디맨드
     region_name=config.aws_region,
     max_tokens=8192,
     temperature=0.0,  # 결정론적 출력
 )
 ```
+
+> **모델 변경 이유 (2026-06-12):** `us.anthropic.claude-sonnet-4-6` 는 APAC 교차 리전 프로파일이
+> `ap-northeast-2`에서 Bedrock Agent UpdateAgent에 미지원. `anthropic.claude-3-5-sonnet-20240620-v1:0`
+> (v1 온디맨드)으로 전환. AWS Marketplace 사용 사례 승인 완료.
 
 ### 환경 변수 패턴 — BaseAgentConfig
 

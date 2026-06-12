@@ -570,6 +570,126 @@ aws bedrock-agent list-ingestion-jobs \
 
 ---
 
+## Phase J — Orchestrator Lambda 배포
+
+> **신규 (2026-06-12):** Lightweight Worker가 Bedrock AgentCore 직접 호출 대신
+> Orchestrator Python Lambda를 비동기 호출하도록 아키텍처 변경.
+> Strands SDK가 Lambda 내에서 실행되어 모든 도구 (ddb_tools, github_tools, slack_tools)를 정상 사용 가능.
+
+### J-1. Global IAM 업데이트
+
+Orchestrator Lambda 역할 신규 추가 + Worker 역할에 `lambda:InvokeFunction` 추가.
+
+```bash
+cd infra/terraform/global/iam
+terraform init
+terraform plan
+terraform apply
+```
+
+완료 후 출력 확인:
+```
+lambda_orchestrator_role_arn = "arn:aws:iam::XXXX:role/aigo-lambda-orchestrator-role"
+```
+
+- [x] `global/iam` Terraform apply 완료 (aigo-lambda-orchestrator-role 생성, worker 역할에 InvokeFunction 추가)
+
+### J-2. Orchestrator 패키지 빌드 및 S3 업로드
+
+```bash
+# 빌드 + S3 업로드 (Lambda 코드 업데이트까지 자동)
+./scripts/deploy-orchestrator.sh
+
+# 또는 빌드만 (업로드 없이 검증)
+./scripts/deploy-orchestrator.sh --skip-upload
+```
+
+- [x] orchestrator ZIP 빌드 완료 (27MB, strands-agents + boto3 + 모든 도구 포함)
+- [x] `s3://aigo-artifacts/lambda/orchestrator/latest.zip` 업로드 완료 (v4 배포)
+
+### J-3. Prod Terraform 업데이트
+
+`lambda_orchestrator` 모듈 신규 + `lambda_lightweight_worker` timeout 변경.
+
+```bash
+cd infra/terraform/envs/prod
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+```
+
+**변경 내용:**
+- `aigo-orchestrator` Lambda 생성 (python3.12, 3008MB, 900s)
+- `aigo-lightweight-worker` timeout: 900s → 120s
+- Monitoring 대상 Lambda에 `aigo-orchestrator` 추가
+
+- [x] `envs/prod` Terraform apply 완료 (lambda_orchestrator 모듈 생성)
+- [x] `aigo-orchestrator` Lambda 생성 확인 (python3.12, 3008MB, 900s)
+
+### J-4. Lightweight Worker 재배포
+
+`@aws-sdk/client-lambda` 의존성으로 교체, Lambda invoke 방식으로 코드 변경.
+
+```bash
+# 빌드
+cd workers/lightweight
+pnpm install   # @aws-sdk/client-lambda 설치
+pnpm build     # TypeScript 컴파일 + esbuild 번들
+
+# 배포 (기존 스크립트 사용)
+./scripts/deploy-lambda.sh worker-lightweight aigo-lightweight-worker
+```
+
+- [x] Lightweight Worker 빌드 성공 (TypeScript 0 errors, esbuild 257.7kb)
+- [x] `aigo-lightweight-worker` Lambda 재배포 완료 (v16, lambda-client.ts 방식)
+
+### J-5. E2E 검증
+
+```bash
+# 테스트 PR 생성 후 흐름 확인
+# 1. GitHub PR → Webhook → github-connector Lambda
+# 2. github-connector → SQS analysis-queue
+# 3. SQS → lightweight-worker Lambda
+# 4. lightweight-worker → orchestrator Lambda (async)
+# 5. orchestrator → 4개 서브에이전트 → DynamoDB → GitHub comment → Slack
+
+# DynamoDB에서 job 완료 확인
+aws dynamodb get-item \
+  --table-name aigo-AnalysisJobs \
+  --key '{"PK":{"S":"JOB#<JOB_ID>"},"SK":{"S":"METADATA"}}' \
+  --query "Item.[status.S,reportId.S]" \
+  --region ap-northeast-2
+
+# Reports 테이블 확인
+aws dynamodb scan \
+  --table-name aigo-Reports \
+  --limit 1 \
+  --region ap-northeast-2 | jq '.Items[0]'
+```
+
+- [x] 테스트 PR #31 (hj-3/gympt-app) 사용
+- [x] AnalysisJob `MQA9USA9CRF9BNS` status = COMPLETED 확인
+- [x] Reports 테이블 `MQA9USA9CRF9BNS-report` 생성 확인 (LOW/APPROVE/PENDING)
+- [x] GitHub PR에 분석 코멘트 게시 확인 (https://github.com/hj-3/gympt-app/pull/31#issuecomment-4688165060)
+- [ ] Slack 알림 수신 확인 → SLACK_CHANNEL_ID 미설정으로 channel_not_found 오류 (J-5 참조)
+
+> **SLACK_CHANNEL_ID 설정 (필수):** Slack 알림이 `channel_not_found` 오류를 반환하면
+> Slack 채널 ID를 Lambda 환경변수에 설정한다.
+> Slack 채널 우클릭 → "채널 세부정보 보기" → 하단 채널 ID 복사 (`C0XXXXXXXXX` 형식).
+>
+> ```bash
+> # Terraform으로 관리 — infra/terraform/envs/prod/main.tf의 lambda_common_env에 추가:
+> SLACK_CHANNEL_ID = "C0XXXXXXXXX"
+>
+> # 또는 즉시 반영:
+> aws lambda update-function-configuration \
+>   --function-name aigo-orchestrator \
+>   --environment "Variables={SLACK_CHANNEL_ID=C0XXXXXXXXX}" \
+>   --region ap-northeast-2
+> ```
+
+---
+
 ## Phase I — 배포 검증
 
 > **현재 상태 (2026-06-11):** I-1, I-4 PASSING. I-3 수동 확인 필요. I-2는 Phase F (Webhook URL 업데이트) 완료 후 가능.
@@ -639,6 +759,7 @@ aws cloudwatch describe-alarms \
 - [x] Phase F — Webhook/Slash Command URL 업데이트
 - [x] Phase G-1 — Bedrock Agent 7개 배포 (Terraform으로 자동 완료, 상태: PREPARED)
 - [x] Phase G-2 — CD 파이프라인 (Lambda + ECS + Dashboard) PASSING
+- [x] Phase J — Orchestrator Lambda 배포 완료 (E2E 검증: Job COMPLETED, PR 코멘트 게시)
 - [x] Phase G-3 — 커스텀 도메인 연결 완료 (app.seolphung.com, ACM us-east-1)
 - [x] Phase H — 초기 데이터 설정 (Cognito 사용자, Organization, KB 문서)
 - [x] Phase I-1 — API /health + CloudFront 헬스체크 PASSING

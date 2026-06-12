@@ -358,6 +358,95 @@ resource "aws_iam_role_policy" "lambda_worker" {
         Effect   = "Allow"
         Action   = ["bedrock:InvokeAgent"]
         Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:agent-alias/*/*"
+      },
+      {
+        Sid      = "InvokeOrchestratorLambda"
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = "arn:aws:lambda:${var.aws_region}:${var.aws_account_id}:function:${local.p}-orchestrator*"
+      }
+    ]
+  })
+}
+
+# Orchestrator Lambda Execution Role
+resource "aws_iam_role" "lambda_orchestrator" {
+  name               = "${local.p}-lambda-orchestrator-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume.json
+  tags               = local.common_tags
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_orchestrator_vpc" {
+  role       = aws_iam_role.lambda_orchestrator.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_orchestrator_xray" {
+  role       = aws_iam_role.lambda_orchestrator.name
+  policy_arn = "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+}
+
+resource "aws_iam_role_policy" "lambda_orchestrator" {
+  name = "${local.p}-lambda-orchestrator-policy"
+  role = aws_iam_role.lambda_orchestrator.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "DynamoReadWrite"
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
+          "dynamodb:Query", "dynamodb:BatchWriteItem"
+        ]
+        Resource = local.ddb_arns
+      },
+      {
+        Sid      = "S3ReadWrite"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:PutObject", "s3:HeadObject"]
+        Resource = local.s3_arns
+      },
+      {
+        Sid      = "SecretsRead"
+        Effect   = "Allow"
+        Action   = ["secretsmanager:GetSecretValue"]
+        Resource = "arn:aws:secretsmanager:${var.aws_region}:${var.aws_account_id}:secret:${local.p}/*"
+      },
+      {
+        Sid      = "KMS"
+        Effect   = "Allow"
+        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
+        Resource = local.kms_arns
+      },
+      {
+        Sid    = "BedrockInvokeModel"
+        Effect = "Allow"
+        Action = [
+          "bedrock:InvokeModel",
+          "bedrock:InvokeModelWithResponseStream"
+        ]
+        Resource = [
+          "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
+          "arn:aws:bedrock:::foundation-model/*",
+          "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/*"
+        ]
+      },
+      {
+        Sid      = "BedrockInvokeAgent"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeAgent"]
+        Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:agent-alias/*/*"
+      },
+      {
+        Sid    = "BedrockKnowledgeBase"
+        Effect = "Allow"
+        Action = [
+          "bedrock:Retrieve",
+          "bedrock:RetrieveAndGenerate"
+        ]
+        Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:knowledge-base/*"
       }
     ]
   })
