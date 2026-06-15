@@ -7,6 +7,7 @@ interface Report {
   readonly reportId: string;
   readonly repoId: string;
   readonly riskLevel: string;
+  readonly riskScore: number;
   readonly mergeRecommendation: string;
   readonly approvalStatus: string;
   readonly summary: string;
@@ -50,7 +51,14 @@ export function ReportsPage() {
                     {report.repoId}
                   </Link>
                 </td>
-                <td className="px-6 py-4"><span className={riskLevelBadge(report.riskLevel)}>{report.riskLevel}</span></td>
+                <td className="px-6 py-4">
+                  <span className={riskLevelBadge(report.riskLevel)}>
+                    {report.riskLevel}
+                    {report.riskScore !== undefined && (
+                      <span className="ml-1 font-mono text-xs opacity-80">({report.riskScore})</span>
+                    )}
+                  </span>
+                </td>
                 <td className="px-6 py-4">
                   <span className={riskLevelBadge(
                     report.mergeRecommendation === 'APPROVE' ? 'LOW'

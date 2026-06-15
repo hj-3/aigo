@@ -13,6 +13,8 @@ class WorkerConfig(BaseModel, frozen=True):
     s3_agent_outputs_bucket: str = Field(default_factory=lambda: _require("S3_AGENT_OUTPUTS_BUCKET"))
     sqs_fix_queue_url: str = Field(default_factory=lambda: _require("SQS_FIX_QUEUE_URL"))
     sqs_notification_queue_url: str = Field(default_factory=lambda: _require("SQS_NOTIFICATION_QUEUE_URL"))
+    fix_agent_id: str = Field(default_factory=lambda: _require("FIX_AGENT_ID"))
+    fix_agent_alias_id: str = Field(default_factory=lambda: os.environ.get("FIX_AGENT_ALIAS_ID", "TSTALIASID"))
     clone_workspace: str = Field(default_factory=lambda: os.environ.get("CLONE_WORKSPACE", "/tmp/repos"))
     max_patch_size_bytes: int = 5 * 1024 * 1024  # 5MB
 

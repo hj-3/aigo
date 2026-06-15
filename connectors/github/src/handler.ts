@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { ddbPut, ddbGet, sqsSendMessage, getSecretJson, Config } from '@aigo/aws-clients';
+import { ddbPut, ddbGet, ddbQuery, sqsSendMessage, getSecretJson, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { GitHubPRWebhookPayload } from '@aigo/types';
 import { validateGitHubSignature, extractRawBody } from './validator.js';
@@ -15,7 +15,18 @@ interface GithubAppCredentials {
   readonly webhookSecret: string;
   readonly appId: string;
   readonly privateKey: string;
-  readonly installationId: string;
+}
+
+interface IntegrationRecord {
+  orgId: string;
+  installationId: string;
+  status: string;
+}
+
+interface RepoRecord {
+  orgId: string;
+  repoId: string;
+  config: { autoAnalyzeOnPR: boolean };
 }
 
 export async function handleGitHubWebhook(
@@ -72,18 +83,48 @@ export async function handleGitHubWebhook(
     return { statusCode: 204, body: '' };
   }
 
-  // ── 3. Resolve orgId and repoId from repository.node_id ───────────────────
-  // In a real implementation, look up Repositories table by providerRepoId
-  const providerRepoId = String(payload.repository.id);
-  const repoRecord = await ddbGet<{ orgId: string; repoId: string; config: { autoAnalyzeOnPR: boolean } }>(
-    {
-      TableName: Config.tableName('Repositories'),
-      Key: { PK: `PROVIDER_REPO#${providerRepoId}`, SK: 'METADATA' },
-    },
-  );
+  // ── 3. Multi-tenant routing: installation → orgId ─────────────────────────
+  // payload.installation.id from GitHub App webhook
+  const installationId = String((payload as unknown as { installation?: { id?: number } }).installation?.id ?? '');
+  if (!installationId) {
+    logger.warn('No installation.id in payload — webhook may be from personal app or old config');
+    return { statusCode: 422, body: '{"error":"missing_installation_id"}' };
+  }
 
+  // Look up Integrations GSI2: INSTALLATION#{installationId} → orgId
+  const integrationResult = await ddbQuery<IntegrationRecord>({
+    TableName: Config.tableName('Integrations'),
+    IndexName: 'GSI2-externalId-index',
+    KeyConditionExpression: 'GSI2PK = :pk',
+    ExpressionAttributeValues: {
+      ':pk': `INSTALLATION#${installationId}`,
+    },
+    Limit: 1,
+  });
+
+  const integration = integrationResult.items[0];
+  if (!integration || integration.status !== 'ACTIVE') {
+    logger.info('GitHub App installation not found or inactive', { installationId });
+    return { statusCode: 200, body: '{"skipped":"installation_not_registered"}' };
+  }
+  const { orgId } = integration;
+
+  // ── 4. Resolve repoId from Repositories GSI2 ──────────────────────────────
+  const providerRepoId = String(payload.repository.id);
+
+  const repoResult = await ddbQuery<RepoRecord>({
+    TableName: Config.tableName('Repositories'),
+    IndexName: 'GSI2-providerRepoId-index',
+    KeyConditionExpression: 'GSI2PK = :pk',
+    ExpressionAttributeValues: {
+      ':pk': `PROVIDER_REPO#${providerRepoId}`,
+    },
+    Limit: 1,
+  });
+
+  const repoRecord = repoResult.items.find((r) => r.orgId === orgId);
   if (!repoRecord) {
-    logger.info('Repository not registered, skipping', { providerRepoId });
+    logger.info('Repository not registered for this org', { providerRepoId, orgId });
     return { statusCode: 200, body: '{"skipped":"repo_not_registered"}' };
   }
 
@@ -91,8 +132,8 @@ export async function handleGitHubWebhook(
     return { statusCode: 200, body: '{"skipped":"auto_analyze_disabled"}' };
   }
 
-  // ── 4. Idempotency check — skip if job already exists for this commit ──────
-  const { orgId, repoId } = repoRecord;
+  // ── 5. Idempotency check — skip if job already exists for this commit ──────
+  const { repoId } = repoRecord;
   const commitSha = payload.pull_request.head.sha;
   const idempotencyKey = `${repoId}#PR#${payload.number}#${commitSha}`;
 
@@ -108,10 +149,10 @@ export async function handleGitHubWebhook(
     return { statusCode: 200, body: JSON.stringify({ skipped: 'duplicate', jobId: existingJob.jobId }) };
   }
 
-  // ── 5. Create AnalysisJob ─────────────────────────────────────────────────
+  // ── 6. Create AnalysisJob ─────────────────────────────────────────────────
   const jobId = ULID_PLACEHOLDER();
   const now = new Date().toISOString();
-  const triggeredBy = 'system'; // GitHub webhooks are system-triggered
+  const triggeredBy = 'system';
 
   const jobItem = {
     PK: `JOB#${jobId}`,
@@ -125,6 +166,7 @@ export async function handleGitHubWebhook(
     idempotencyKey,
     retryCount: 0,
     triggeredBy,
+    installationId,
     prContext: {
       prNumber: payload.number,
       prTitle: payload.pull_request.title,
@@ -143,7 +185,6 @@ export async function handleGitHubWebhook(
     GSI2SK: now,
   };
 
-  // Transact: create job + idempotency marker
   try {
     await ddbPut({ TableName: Config.tableName('AnalysisJobs'), Item: jobItem });
     await ddbPut({
@@ -153,7 +194,7 @@ export async function handleGitHubWebhook(
         SK: 'METADATA',
         jobId,
         createdAt: now,
-        ttl: Math.floor(Date.now() / 1000) + 86400 * 7, // 7 days
+        ttl: Math.floor(Date.now() / 1000) + 86400 * 7,
       },
       ConditionExpression: 'attribute_not_exists(PK)',
     });
@@ -164,7 +205,7 @@ export async function handleGitHubWebhook(
     throw err;
   }
 
-  // ── 6. Publish to SQS analysis-queue ─────────────────────────────────────
+  // ── 7. Publish to SQS analysis-queue ──────────────────────────────────────
   const sqsPayload = {
     type: 'ANALYSIS_REQUESTED',
     messageId: randomUUID(),
@@ -176,6 +217,7 @@ export async function handleGitHubWebhook(
     jobType: 'PR_ANALYSIS',
     triggeredBy,
     idempotencyKey,
+    installationId,
     prContext: jobItem.prContext,
   };
 

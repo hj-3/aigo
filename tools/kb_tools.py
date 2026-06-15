@@ -22,38 +22,43 @@ def _kb_client() -> Any:
     )
 
 
-def _require_kb_id() -> str:
-    v = os.environ.get("BEDROCK_KB_ID")
-    if not v:
-        raise RuntimeError("BEDROCK_KB_ID not set")
-    return v
+def _get_kb_id() -> str | None:
+    return os.environ.get("BEDROCK_KB_ID") or None
 
 
 def _search_kb(query: str, filter_tag: str | None = None) -> str:
-    kb_id = _require_kb_id()
-    params = {
-        "knowledgeBaseId": kb_id,
-        "retrievalQuery": {"text": query},
-        "retrievalConfiguration": {
-            "vectorSearchConfiguration": {
-                "numberOfResults": 5,
-                **({"filter": {"equals": {"key": "category", "value": filter_tag}}} if filter_tag else {}),
-            }
-        },
-    }
-    response = _kb_client().retrieve(**params)
-    results = response.get("retrievalResults", [])
-    if not results:
-        return "No relevant guidelines found."
+    kb_id = _get_kb_id()
+    if not kb_id:
+        logger.warning("BEDROCK_KB_ID not set — KB search skipped")
+        return "Knowledge Base not configured. Proceeding with analysis using built-in knowledge only."
 
-    chunks = []
-    for r in results:
-        content = r.get("content", {}).get("text", "")
-        location = r.get("location", {}).get("s3Location", {}).get("uri", "")
-        score = r.get("score", 0)
-        chunks.append(f"[Source: {location}, Relevance: {score:.2f}]\n{content}")
+    try:
+        params: dict = {
+            "knowledgeBaseId": kb_id,
+            "retrievalQuery": {"text": query},
+            "retrievalConfiguration": {
+                "vectorSearchConfiguration": {
+                    "numberOfResults": 5,
+                    **({"filter": {"equals": {"key": "category", "value": filter_tag}}} if filter_tag else {}),
+                }
+            },
+        }
+        response = _kb_client().retrieve(**params)
+        results = response.get("retrievalResults", [])
+        if not results:
+            return "No relevant guidelines found in Knowledge Base."
 
-    return "\n\n---\n\n".join(chunks)
+        chunks = []
+        for r in results:
+            content = r.get("content", {}).get("text", "")
+            location = r.get("location", {}).get("s3Location", {}).get("uri", "")
+            score = r.get("score", 0)
+            chunks.append(f"[Source: {location}, Relevance: {score:.2f}]\n{content}")
+
+        return "\n\n---\n\n".join(chunks)
+    except Exception as exc:
+        logger.warning("KB search failed — continuing without KB context", error=str(exc))
+        return f"Knowledge Base search failed ({exc}). Proceeding with built-in knowledge only."
 
 
 @tool

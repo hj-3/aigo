@@ -43,20 +43,22 @@ Skip application code files entirely.
 - DynamoDB: correct key design, no hot partitions
 
 ## Output Format
-Return ONLY a JSON array of findings:
+Return ONLY a JSON object (not an array):
 ```json
-[
-  {
-    "severity": "CRITICAL",
-    "category": "SECURITY",
-    "location": { "file": "modules/s3/main.tf", "resource": "aws_s3_bucket.logs" },
-    "description": "S3 bucket missing server-side encryption configuration",
-    "confidence": 1.0,
-    "fixable": true,
-    "fix_suggestion": "Add aws_s3_bucket_server_side_encryption_configuration resource with AES256 or aws:kms",
-    "aws_reference": "https://docs.aws.amazon.com/wellarchitected/latest/security-pillar/"
-  }
-]
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "category": "SECURITY",
+      "location": "modules/s3/main.tf:aws_s3_bucket.logs",
+      "description": "S3 bucket missing server-side encryption configuration",
+      "confidence": 1.0,
+      "fixable": true,
+      "fix_suggestion": "Add aws_s3_bucket_server_side_encryption_configuration resource with AES256 or aws:kms"
+    }
+  ],
+  "summary": "One critical security misconfiguration found in S3 bucket configuration."
+}
 ```
 
 ## Severity Guidelines

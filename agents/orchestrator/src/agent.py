@@ -1,14 +1,20 @@
 """
-Orchestrator Agent — coordinates all sub-agent personas for PR analysis.
+Orchestrator Agent — Single Strands Agent with Multi-Persona analysis.
 
-Flow:
-  1. Receive job_input with diffContent (pre-fetched by lambda_handler)
-  2. Call invoke_code_reviewer, invoke_infra_reviewer, invoke_risk_reviewer, invoke_security_agent
-     — each sub-agent receives diff content directly in their prompt (no action groups needed)
-  3. Parse findings from each sub-agent response
-  4. Save all findings via save_findings
-  5. Compute risk level, generate PR comment, save report
-  6. Notify Slack, post GitHub PR comment
+Flow (PR_ANALYSIS):
+  0. Create GitHub Check Run → signal analysis started
+  1. Retrieve repo/developer memory → contextual history
+  2. For each persona: search KB → analyze diff → save_findings
+  3. Compute Risk Score (0-100) → save_report
+  4. Update GitHub Check Run with conclusion
+  5. notify_analysis_complete (per-org Slack) → post_pr_comment (with risk_score)
+  6. save_pr_analysis_memory → persist learning for future PRs
+
+Flow (INCIDENT):
+  0. Retrieve incident memory for the affected service
+  1. invoke_devops_agent → RCA report
+  2. save_incident_memory → persist for future incidents
+  3. send_incident_update → Slack notification
 """
 
 from __future__ import annotations
@@ -24,178 +30,383 @@ from .config import get_config
 
 logger = structlog.get_logger(__name__)
 
-ORCHESTRATOR_SYSTEM_PROMPT = """You are the AIGO Orchestrator Agent — the master coordinator for automated PR analysis.
+ORCHESTRATOR_SYSTEM_PROMPT = """You are AIGO — the AI Change Management Agent for the AgentOps Platform.
 
-## Your Responsibilities
-1. Coordinate 4 specialized review agents sequentially
-2. Parse and consolidate all their findings
-3. Determine overall risk level and merge recommendation
-4. Persist results, notify stakeholders
+## Your Role
+You analyze Pull Request changes from 4 expert perspectives (personas). You are a single agent
+that switches analysis focus — not 4 separate agents. All analysis happens in one coherent flow.
 
-## Sub-Agent Tools
-- invoke_code_reviewer(job_input_json, diff_content) → JSON with "findings" array
-- invoke_infra_reviewer(job_input_json, diff_content) → JSON with "findings" array
-- invoke_risk_reviewer(job_input_json, diff_content) → JSON with "findings" array
-- invoke_security_agent(job_input_json, diff_content) → JSON with "findings" array
+## Persona 1: Code Reviewer
+Detect in changed lines only:
+- Bug patterns: null/undefined dereferences, swallowed exceptions, off-by-one errors
+- Race Conditions and TOCTOU vulnerabilities
+- N+1 database query patterns, unbounded loops
+- Hardcoded secrets, API keys, passwords
+- API breaking changes (removed fields, changed types)
+- Missing error propagation, missing boundary validation
+- Test coverage gaps for changed code
 
-## Persistence Tools
-- save_findings(job_id, agent_name, findings) → confirmation
-- save_report(job_id, org_id, repo_id, risk_level, merge_recommendation, summary, findings_by_severity) → report_id
-- update_job_status(job_id, status, error_message) → confirmation
+## Persona 2: Infrastructure Reviewer
+Detect in IaC files (*.tf, *.yaml, Dockerfile, *.json CFN) only:
+- IAM wildcard actions or resources (least-privilege violations)
+- Security Groups with 0.0.0.0/0 on sensitive ports
+- Missing encryption (S3, DynamoDB, SQS, EBS)
+- Missing reliability features (no PITR, no DLQ, no Multi-AZ)
+- Data retention policy violations (infinite log retention)
+- Cost impact of new resources
 
-## Notification Tools
-- notify_analysis_complete(job_id, org_id, repo_id, risk_level, merge_recommendation, summary, findings_count) → confirmation
-- post_pr_comment(repo_full_name, pr_number, installation_id, risk_level, merge_recommendation, findings, summary) → confirmation
+## Persona 3: Security Agent
+Detect security vulnerabilities (OWASP Top 10 / CWE):
+- A01 Broken Access Control: missing authz checks, IDOR
+- A02 Cryptographic Failures: weak algorithms, unencrypted sensitive data
+- A03 Injection: SQL injection, command injection, template injection
+- A04-A10: CSRF, misconfiguration, vulnerable components, auth failures, SSRF
+- Hardcoded credentials (CRITICAL regardless of whether they appear real)
 
-## Risk Level Rules
-- CRITICAL: any CRITICAL severity finding → BLOCK merge
-- HIGH: any HIGH severity finding → REQUEST_CHANGES
-- MEDIUM: medium findings only → REQUEST_CHANGES
-- LOW / INFO: no significant issues → APPROVE
+## Persona 4: Risk Reviewer
+Assess deployment and business risk:
+- API breaking changes (removed endpoints, changed schemas, new required params)
+- Database schema changes without migration/rollback
+- Blast radius: how many services/users are impacted
+- Rollback complexity: EASY (git revert) | MEDIUM | HARD (data transformation needed)
+- Deployment coordination requirements
 
-## Required Execution Order
-Step 1: Call all 4 sub-agent tools (pass job_input_json and the full diff_content)
-Step 2: Parse each JSON response, extract "findings" array
-Step 3: Call save_findings 4 times (once per agent)
-Step 4: Compute risk_level and merge_recommendation based on findings
-Step 5: Call save_report
-Step 6: Call notify_analysis_complete
-Step 7: Call post_pr_comment
+## Analysis Tools
+- search_coding_standards(query) — KB: coding standards, past code incidents
+- search_infrastructure_standards(query) — KB: AWS Well-Architected, infra policies
+- search_security_standards(query) — KB: security policies, OWASP guidelines
+- search_risk_policies(query) — KB: change management policies, past risk incidents
 
-Never skip steps. If a sub-agent returns invalid JSON, treat it as empty findings and continue.
+## Risk Score Formula (0–100)
+sum = (CRITICAL_count × 25) + (HIGH_count × 10) + (MEDIUM_count × 3) + (LOW_count × 1)
+risk_score = min(sum, 100)
+
+## Risk Level Thresholds
+- 0–20:  LOW      → APPROVE
+- 21–50: MEDIUM   → REQUEST_CHANGES
+- 51–80: HIGH     → REQUEST_CHANGES
+- 81–100: CRITICAL → BLOCK
+
+## GitHub Check Run Conclusion Mapping
+- LOW/APPROVE → success
+- MEDIUM/REQUEST_CHANGES → neutral
+- HIGH/REQUEST_CHANGES → action_required
+- CRITICAL/BLOCK → action_required
+
+## Execution Rules
+1. Search KB BEFORE each persona analysis (use relevant query)
+2. Run ALL 4 persona analyses — never skip any even if diff is small
+3. Only flag issues in CHANGED lines (additions in the diff)
+4. Never fabricate findings — only report what you genuinely detect
+5. Always pass org_id and installation_id when calling Slack/GitHub tools
+6. Complete ALL steps in the pipeline — never stop early
+"""
+
+INCIDENT_SYSTEM_PROMPT = """You are AIGO — the DevOps Incident Response Orchestrator.
+
+When an incident occurs, you coordinate investigation using the DevOps Agent (OODA Loop methodology):
+1. Retrieve past incident memories to identify patterns
+2. Invoke the DevOps Incident Agent with full context
+3. Save the RCA result to incident memory
+4. Send Slack notification with investigation results
+
+You NEVER modify infrastructure directly. Investigation and reporting only.
 """
 
 
-def build_agent() -> Agent:
+def build_agent(system_prompt: str = ORCHESTRATOR_SYSTEM_PROMPT) -> Agent:
     config = get_config()
 
-    model = BedrockModel(
-        model_id=config.model_id,
-        region_name=config.aws_region,
-        max_tokens=8192,
-        temperature=0.0,
-    )
+    model_kwargs: dict = {
+        "model_id": config.model_id,
+        "region_name": config.aws_region,
+        "max_tokens": 8192,
+        "temperature": 0.0,
+    }
+    if config.guardrail_id:
+        model_kwargs["guardrail_config"] = {
+            "guardrailIdentifier": config.guardrail_id,
+            "guardrailVersion": config.guardrail_version,
+            "trace": "enabled",
+        }
 
-    from tools import ddb_tools, github_tools, slack_tools, subagent_tools  # noqa: PLC0415
+    model = BedrockModel(**model_kwargs)
+
+    from tools import ddb_tools, github_tools, kb_tools, slack_tools, subagent_tools  # noqa: PLC0415
 
     return Agent(
         model=model,
-        system_prompt=ORCHESTRATOR_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         tools=[
-            subagent_tools.invoke_code_reviewer,
-            subagent_tools.invoke_infra_reviewer,
-            subagent_tools.invoke_risk_reviewer,
-            subagent_tools.invoke_security_agent,
+            # KB search — used before each persona analysis
+            kb_tools.search_coding_standards,
+            kb_tools.search_infrastructure_standards,
+            kb_tools.search_security_standards,
+            kb_tools.search_risk_policies,
+            # Persistence
             ddb_tools.save_report,
             ddb_tools.save_findings,
             ddb_tools.update_job_status,
+            ddb_tools.update_incident,
+            # Memory — retrieve history before analysis, save results after
+            ddb_tools.get_repo_memory,
+            ddb_tools.get_developer_memory,
+            ddb_tools.save_pr_analysis_memory,
+            ddb_tools.get_incident_memory,
+            ddb_tools.save_incident_memory,
+            # GitHub Check Run
+            github_tools.create_check_run,
+            github_tools.update_check_run,
+            # Notifications
             slack_tools.notify_analysis_complete,
+            slack_tools.send_incident_update,
             github_tools.post_pr_comment,
+            # Incident sub-agent
+            subagent_tools.invoke_devops_agent,
         ],
     )
 
 
 def run_analysis(job_input: dict[str, Any]) -> dict[str, Any]:
-    """Entry point called by lambda_handler.handler."""
+    """Entry point called by lambda_handler.handler. Routes to PR analysis or incident."""
     job_id = job_input["jobId"]
     org_id = job_input.get("orgId", "")
     repo_id = job_input.get("repoId", "")
-    log = logger.bind(job_id=job_id, org_id=org_id, repo_id=repo_id)
+    job_type = job_input.get("jobType", "PR_ANALYSIS")
+    log = logger.bind(job_id=job_id, org_id=org_id, repo_id=repo_id, job_type=job_type)
+    log.info("Orchestrator starting")
 
-    # Extract diff content — keep it out of job_input_json to avoid duplication in sub-agent prompts
+    if job_type == "INCIDENT":
+        return _run_incident(job_input, log)
+    return _run_pr_analysis(job_input, log)
+
+
+def _run_pr_analysis(job_input: dict[str, Any], log: Any) -> dict[str, Any]:
+    job_id = job_input["jobId"]
+    org_id = job_input.get("orgId", "")
+    repo_id = job_input.get("repoId", "")
+    installation_id = job_input.get("installationId", "")
+
     diff_content = job_input.pop("diffContent", "")
     job_input_json = json.dumps(job_input)
 
     pr_ctx = job_input.get("prContext", {})
     diff_meta = job_input.get("diffMetadata", {})
+    head_sha = pr_ctx.get("headSha", "")
+    pr_number = pr_ctx.get("prNumber", 0)
+    pr_url = pr_ctx.get("prUrl", "")
+    repo_full_name = pr_ctx.get("repoFullName", repo_id)
+    author_login = pr_ctx.get("authorLogin", "")
+    dashboard_url = "https://app.seolphung.com"
 
     log.info(
-        "Orchestrator starting",
-        pr_number=pr_ctx.get("prNumber"),
+        "Orchestrator PR analysis (multi-persona)",
+        pr_number=pr_number,
         changed_files=len(diff_meta.get("changedFiles", [])),
         diff_chars=len(diff_content),
     )
 
     agent = build_agent()
 
-    prompt = f"""Analyze Pull Request #{pr_ctx.get("prNumber")} — {pr_ctx.get("prTitle", "")}.
-Repository: {repo_id} | Author: {pr_ctx.get("authorLogin", "")}
+    prompt = f"""Analyze Pull Request #{pr_number} — {pr_ctx.get("prTitle", "")}.
+Repository: {repo_full_name} | Author: {author_login}
+Branch: {pr_ctx.get("headBranch", "")} → {pr_ctx.get("baseBranch", "")}
 Files changed: {len(diff_meta.get("changedFiles", []))} (+{diff_meta.get("additions", 0)} / -{diff_meta.get("deletions", 0)})
-
-## Job Context JSON
-{job_input_json}
+Head SHA: {head_sha}
+Installation ID: {installation_id}
+Org ID: {org_id}
 
 ## PR Diff
 ```diff
-{diff_content}
+{diff_content[:25000]}
 ```
 
-Execute the full analysis pipeline:
+## Job Context
+{job_input_json}
 
-1. Call invoke_code_reviewer with:
-   - job_input_json = (the Job Context JSON above)
-   - diff_content = (the full PR diff above)
+---
+Execute the full multi-persona analysis pipeline. Complete EVERY step below.
 
-2. Call invoke_infra_reviewer with:
-   - job_input_json = (the Job Context JSON above)
-   - diff_content = (the full PR diff above)
+### Step 0 — GitHub Check Run (signal analysis started)
+Call create_check_run(
+  repo_full_name="{repo_full_name}",
+  head_sha="{head_sha}",
+  installation_id="{installation_id}"
+)
+Save the returned check_run_id for use in Step 6.
 
-3. Call invoke_risk_reviewer with:
-   - job_input_json = (the Job Context JSON above)
-   - diff_content = (the full PR diff above)
+### Step 0b — Retrieve History (context for this analysis)
+0b-1. Call get_repo_memory(org_id="{org_id}", repo_id="{repo_id}", limit=3)
+      Review past risk scores and recurring patterns for this repo.
+0b-2. Call get_developer_memory(org_id="{org_id}", author_login="{author_login}", limit=5)
+      Check for developer-specific recurring patterns.
 
-4. Call invoke_security_agent with:
-   - job_input_json = (the Job Context JSON above)
-   - diff_content = (the full PR diff above)
+### Step 1 — Code Review
+1a. Call search_coding_standards("code quality bug patterns race condition null check error handling test coverage")
+1b. Analyze the diff as Code Reviewer using the KB context. Identify all genuine issues in changed lines.
+1c. Call save_findings(job_id="{job_id}", agent_name="code-reviewer", findings=[list of finding dicts])
+    Each finding: {{"severity":"...", "category":"...", "location":"file:line", "description":"...", "confidence":0.0-1.0, "fixable":true|false, "fix_suggestion":"..."}}
 
-5. Parse each sub-agent response as JSON and extract "findings". If parsing fails use [].
+### Step 2 — Infrastructure Review
+2a. Call search_infrastructure_standards("AWS IAM terraform security encryption well-architected reliability cost")
+2b. Analyze the diff as Infra Reviewer. Only flag IaC files.
+2c. Call save_findings(job_id="{job_id}", agent_name="infra-reviewer", findings=[...])
 
-6. Save findings:
-   - save_findings(job_id="{job_id}", agent_name="code-reviewer", findings=[...from step 1])
-   - save_findings(job_id="{job_id}", agent_name="infra-reviewer", findings=[...from step 2])
-   - save_findings(job_id="{job_id}", agent_name="risk-reviewer", findings=[...from step 3])
-   - save_findings(job_id="{job_id}", agent_name="security-agent", findings=[...from step 4])
+### Step 3 — Security Analysis
+3a. Call search_security_standards("OWASP injection authentication secrets vulnerabilities CWE")
+3b. Analyze the diff as Security Agent. Check for all OWASP Top 10 categories.
+3c. Call save_findings(job_id="{job_id}", agent_name="security-agent", findings=[...])
 
-7. Determine overall risk_level (CRITICAL/HIGH/MEDIUM/LOW) and merge_recommendation (BLOCK/REQUEST_CHANGES/APPROVE).
+### Step 4 — Risk Assessment
+4a. Call search_risk_policies("API breaking changes deployment risk rollback blast radius change management")
+4b. Analyze the diff as Risk Reviewer. Assess deployment blast radius and rollback complexity.
+4c. Call save_findings(job_id="{job_id}", agent_name="risk-reviewer", findings=[...])
 
-8. Call save_report(
-     job_id="{job_id}",
-     org_id="{org_id}",
-     repo_id="{repo_id}",
-     risk_level=<determined>,
-     merge_recommendation=<determined>,
-     summary=<brief 2-3 sentence summary>,
-     findings_by_severity={{"CRITICAL": N, "HIGH": N, "MEDIUM": N, "LOW": N, "INFO": N}}
-   )
-
-9. Call notify_analysis_complete(
-     job_id="{job_id}",
-     repo_name="{pr_ctx.get("repoFullName", repo_id)}",
-     pr_number={pr_ctx.get("prNumber", 0)},
-     pr_url="{pr_ctx.get("prUrl", "")}",
-     risk_level=<from step 7>,
-     merge_recommendation=<from step 7>,
-     findings_summary=<findings_by_severity dict from step 8>,
-     report_url="https://app.seolphung.com/reports/<report_id from step 8>"
-   )
-
-10. Call post_pr_comment(
-      repo_full_name="{pr_ctx.get("repoFullName", "")}",
-      pr_number={pr_ctx.get("prNumber", 0)},
-      risk_level=<from step 7>,
-      merge_recommendation=<from step 7>,
-      summary=<summary from step 8>,
-      findings_by_severity=<findings_by_severity dict from step 8>,
-      report_id=<report_id from step 8>
+### Step 5 — Compute Score and Save Report
+5a. Count all findings from steps 1-4 by severity.
+5b. Compute risk_score = min((CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1), 100)
+5c. Determine risk_level: 0-20→LOW, 21-50→MEDIUM, 51-80→HIGH, 81-100→CRITICAL
+5d. Determine merge_recommendation: LOW→APPROVE, MEDIUM/HIGH→REQUEST_CHANGES, CRITICAL→BLOCK
+5e. Call save_report(
+      job_id="{job_id}",
+      org_id="{org_id}",
+      repo_id="{repo_id}",
+      risk_level=<determined>,
+      risk_score=<computed integer 0-100>,
+      merge_recommendation=<determined>,
+      summary="<2-3 sentence summary>",
+      findings_by_severity={{"CRITICAL": N, "HIGH": N, "MEDIUM": N, "LOW": N, "INFO": N}}
     )
+    Save the returned report_id.
 
-Complete all 10 steps. Do not stop early.
+### Step 6 — Update GitHub Check Run
+Call update_check_run(
+  repo_full_name="{repo_full_name}",
+  check_run_id=<check_run_id from Step 0>,
+  conclusion=<"success" if LOW, "neutral" if MEDIUM, "action_required" if HIGH/CRITICAL>,
+  output_title="<N Critical, N High, N Medium findings>",
+  output_summary="<same summary from Step 5>",
+  installation_id="{installation_id}"
+)
+
+### Step 7 — Slack Notification
+Call notify_analysis_complete(
+  job_id="{job_id}",
+  org_id="{org_id}",
+  repo_name="{repo_full_name}",
+  pr_number={pr_number},
+  pr_url="{pr_url}",
+  risk_level=<from step 5>,
+  risk_score=<from step 5>,
+  merge_recommendation=<from step 5>,
+  findings_summary=<findings_by_severity dict>,
+  report_url="{dashboard_url}/reports/<report_id from step 5>"
+)
+
+### Step 8 — GitHub PR Comment
+Call post_pr_comment(
+  repo_full_name="{repo_full_name}",
+  pr_number={pr_number},
+  risk_level=<from step 5>,
+  risk_score=<from step 5>,
+  merge_recommendation=<from step 5>,
+  summary=<summary from step 5>,
+  findings_by_severity=<dict from step 5>,
+  report_id=<report_id from step 5>,
+  installation_id="{installation_id}"
+)
+
+### Step 9 — Save Analysis Memory
+Call save_pr_analysis_memory(
+  org_id="{org_id}",
+  repo_id="{repo_id}",
+  repo_full_name="{repo_full_name}",
+  pr_number={pr_number},
+  author_login="{author_login}",
+  risk_score=<from step 5>,
+  risk_level=<from step 5>,
+  findings_summary=<dict from step 5>,
+  key_findings=<list of top 3-5 most important finding descriptions>,
+  merge_recommendation=<from step 5>
+)
+
+Complete ALL 9 steps. Do not stop early.
 """
 
     try:
-        result = agent(prompt)
-        log.info("Orchestrator completed successfully")
+        agent(prompt)
+        log.info("PR analysis completed")
         return {"status": "completed", "jobId": job_id}
     except Exception as exc:
-        log.exception("Orchestrator agent failed", error=str(exc))
+        log.exception("Orchestrator PR analysis failed", error=str(exc))
+        raise
+
+
+def _run_incident(job_input: dict[str, Any], log: Any) -> dict[str, Any]:
+    job_id = job_input["jobId"]
+    org_id = job_input.get("orgId", "")
+    incident_id = job_input.get("incidentId", job_id)
+    service = job_input.get("service", "unknown")
+    alarm_name = job_input.get("alarmName", "")
+
+    log.info("Orchestrator incident analysis", incident_id=incident_id, service=service)
+
+    agent = build_agent(INCIDENT_SYSTEM_PROMPT)
+
+    incident_ctx = {
+        "incidentId": incident_id,
+        "service": service,
+        "alarmName": alarm_name,
+        "startTime": job_input.get("startTime", ""),
+        "endTime": job_input.get("endTime", ""),
+        "errorMessages": job_input.get("errorMessages", []),
+        "recentDeployments": job_input.get("recentDeployments", []),
+    }
+
+    prompt = f"""Investigate production incident for service: {service}
+
+Alarm: {alarm_name}
+Org ID: {org_id}
+Incident ID: {incident_id}
+
+### Step 0 — Retrieve Past Incident Memory
+Call get_incident_memory(org_id="{org_id}", service="{service}", limit=3)
+Review past incidents for this service to identify known failure patterns.
+
+### Step 1 — Invoke DevOps Incident Agent
+Call invoke_devops_agent(incident_context_json='{json.dumps(incident_ctx)}')
+This will investigate CloudWatch metrics, logs, X-Ray traces, and CloudTrail for root cause.
+
+### Step 2 — Save Incident Memory
+After the DevOps agent returns its RCA, call save_incident_memory(
+  org_id="{org_id}",
+  incident_id="{incident_id}",
+  service="{service}",
+  root_cause=<rootCause from DevOps agent response>,
+  resolution=<mitigation from DevOps agent response>,
+  affected_services=<affectedServices from response>,
+  prevention=<prevention from response>,
+  duration_minutes=0
+)
+
+### Step 3 — Send Slack Notification
+Call send_incident_update(
+  incident_id="{incident_id}",
+  org_id="{org_id}",
+  title="Incident: {alarm_name}",
+  status="INVESTIGATING",
+  severity="HIGH",
+  update_message=<brief summary of rootCause and mitigation steps>,
+  affected_services=<affectedServices from DevOps agent>
+)
+
+Complete ALL 3 steps.
+"""
+
+    try:
+        agent(prompt)
+        log.info("Incident analysis completed", incident_id=incident_id)
+        return {"status": "completed", "jobId": job_id, "incidentId": incident_id}
+    except Exception as exc:
+        log.exception("Incident analysis failed", error=str(exc))
         raise

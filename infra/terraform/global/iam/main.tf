@@ -193,7 +193,7 @@ resource "aws_iam_role_policy" "lambda_connector" {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
-          "dynamodb:Query", "dynamodb:BatchWriteItem"
+          "dynamodb:Query", "dynamodb:BatchWriteItem", "dynamodb:DeleteItem"
         ]
         Resource = local.ddb_arns
       },
@@ -214,6 +214,25 @@ resource "aws_iam_role_policy" "lambda_connector" {
         Effect   = "Allow"
         Action   = ["events:PutEvents"]
         Resource = local.eb_arn
+      },
+      {
+        Sid    = "SSMSlackTokens"
+        Effect = "Allow"
+        Action = [
+          "ssm:GetParameter", "ssm:GetParameters",
+          "ssm:PutParameter", "ssm:DeleteParameter"
+        ]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/${local.p}/integrations/slack/*"
+      },
+      {
+        Sid    = "CognitoAdminOps"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:AdminUpdateUserAttributes",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminGetUser"
+        ]
+        Resource = "arn:aws:cognito-idp:${var.aws_region}:${var.aws_account_id}:userpool/*"
       }
     ]
   })
@@ -248,7 +267,7 @@ resource "aws_iam_role_policy" "lambda_api" {
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem",
-          "dynamodb:Query", "dynamodb:BatchGetItem"
+          "dynamodb:Query", "dynamodb:BatchGetItem", "dynamodb:DeleteItem"
         ]
         Resource = local.ddb_arns
       },
@@ -269,6 +288,23 @@ resource "aws_iam_role_policy" "lambda_api" {
         Effect   = "Allow"
         Action   = ["kms:Decrypt"]
         Resource = local.kms_arns
+      },
+      {
+        Sid    = "SSMSlackTokensRead"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/${local.p}/integrations/slack/*"
+      },
+      {
+        Sid    = "CognitoAdminOps"
+        Effect = "Allow"
+        Action = [
+          "cognito-idp:AdminUpdateUserAttributes",
+          "cognito-idp:AdminAddUserToGroup",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:ListUsersInGroup"
+        ]
+        Resource = "arn:aws:cognito-idp:${var.aws_region}:${var.aws_account_id}:userpool/*"
       }
     ]
   })
@@ -447,6 +483,12 @@ resource "aws_iam_role_policy" "lambda_orchestrator" {
           "bedrock:RetrieveAndGenerate"
         ]
         Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:knowledge-base/*"
+      },
+      {
+        Sid    = "SSMSlackTokensRead"
+        Effect = "Allow"
+        Action = ["ssm:GetParameter", "ssm:GetParameters"]
+        Resource = "arn:aws:ssm:${var.aws_region}:${var.aws_account_id}:parameter/${local.p}/integrations/slack/*"
       }
     ]
   })
@@ -474,6 +516,7 @@ resource "aws_iam_role_policy" "ecs_task" {
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "DynamoS3Secrets"
         Effect = "Allow"
         Action = [
           "dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:Query",
@@ -482,6 +525,12 @@ resource "aws_iam_role_policy" "ecs_task" {
           "kms:Decrypt", "kms:GenerateDataKey",
         ]
         Resource = "*"
+      },
+      {
+        Sid      = "BedrockInvokeAgent"
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeAgent"]
+        Resource = "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:agent-alias/*/*"
       }
     ]
   })

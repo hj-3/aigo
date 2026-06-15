@@ -31,7 +31,7 @@ DynamoDB 읽기/쓰기 도구.
 | 도구 | 설명 |
 |------|------|
 | `save_findings(job_id, agent_name, findings)` | 발견사항 저장 |
-| `save_report(...)` | 리포트 저장 + AnalysisJob 상태 업데이트 |
+| `save_report(job_id, org_id, repo_id, risk_level, merge_recommendation, summary, findings_by_severity, risk_score, report_s3_key)` | 리포트 저장 + AnalysisJob COMPLETED 상태 업데이트 (`risk_score` 0-100 포함) |
 | `update_job_status(job_id, status, error_message)` | 작업 상태 변경 |
 | `update_incident(incident_id, status, root_cause, ...)` | 인시던트 업데이트 |
 | `update_fix_request(fix_id, status, patch_s3_key, ...)` | Fix 요청 업데이트 |
@@ -87,16 +87,16 @@ Fix Agent용 패치 생성/저장 도구.
 | `list_patches_for_fix(fix_id, org_id, repo_id)` | Fix의 모든 패치 목록 |
 
 ### 9. subagent_tools.py
-Orchestrator가 서브에이전트를 호출하는 도구.
+Orchestrator가 전문 Frontier Agent를 호출하는 도구.  
+Code/Infra/Risk/Security 분석은 Orchestrator가 직접 수행하므로 해당 도구는 제거됨.
 
 | 도구 | 설명 |
 |------|------|
-| `invoke_code_reviewer(job_input_json)` | Code Reviewer Agent 호출 |
-| `invoke_infra_reviewer(job_input_json)` | Infra Reviewer Agent 호출 |
-| `invoke_risk_reviewer(job_input_json)` | Risk Reviewer Agent 호출 |
-| `invoke_security_agent(job_input_json)` | Security Agent 호출 |
+| `invoke_devops_agent(incident_context_json)` | DevOps Incident Agent 호출 (인시던트 RCA 조사) |
 
 **구현:** Bedrock AgentRuntime InvokeAgent API (스트리밍 응답 수집)
+
+> **변경 이유**: 4개 서브에이전트(Code/Infra/Risk/Security) InvokeAgent 패턴 → Orchestrator 멀티 페르소나로 통합 (2026-06-12)
 
 ## 공통 설계
 

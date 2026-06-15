@@ -35,14 +35,33 @@ resource "aws_cognito_user_pool" "main" {
     }
   }
 
+  # Self-signup enabled — external users can register directly
   admin_create_user_config {
-    allow_admin_create_user_only = true
+    allow_admin_create_user_only = false
+  }
 
-    invite_message_template {
-      email_subject = "[AgentOps] 계정이 생성되었습니다"
-      email_message = "{username}님의 임시 비밀번호: {####}"
-      sms_message   = "{username}님의 임시 비밀번호: {####}"
-    }
+  # SES for production email — no 50/day Cognito default limit, custom from address
+  email_configuration {
+    email_sending_account  = "DEVELOPER"
+    source_arn             = var.ses_email_identity_arn
+    from_email_address     = var.ses_from_address
+    reply_to_email_address = var.ses_from_address
+  }
+
+  verification_message_template {
+    default_email_option  = "CONFIRM_WITH_CODE"
+    email_subject_by_link = "[AIGO] 이메일 주소를 확인해주세요"
+    email_message_by_link = <<-HTML
+      <html><body>
+      <h2>AIGO 회원가입을 완료해주세요</h2>
+      <p>아래 링크를 클릭하여 이메일 주소를 인증하세요.</p>
+      <p><a href="{##Click Here##}" style="background:#6366f1;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600;">이메일 인증하기</a></p>
+      <p>링크는 24시간 동안 유효합니다.</p>
+      <p style="color:#6b7280;font-size:12px;">AIGO — AI-Powered PR Analysis Platform</p>
+      </body></html>
+    HTML
+    email_subject         = "[AIGO] 이메일 인증 코드: {####}"
+    email_message         = "<html><body><h2>AIGO 회원가입</h2><p>인증 코드: <strong>{####}</strong></p><p>5분 이내에 입력해주세요.</p></body></html>"
   }
 
   schema {
@@ -67,6 +86,22 @@ resource "aws_cognito_user_pool" "main" {
       min_length = 1
       max_length = 20
     }
+  }
+
+  schema {
+    name                     = "onboardingCompleted"
+    attribute_data_type      = "String"
+    developer_only_attribute = false
+    mutable                  = true
+    required                 = false
+    string_attribute_constraints {
+      min_length = 1
+      max_length = 5
+    }
+  }
+
+  lambda_config {
+    post_confirmation = var.post_confirmation_lambda_arn
   }
 
   tags = local.common_tags

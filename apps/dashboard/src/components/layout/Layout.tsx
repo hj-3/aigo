@@ -7,6 +7,8 @@ import {
   GitBranch,
   Settings,
   Activity,
+  Users,
+  Link2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +17,7 @@ const navItems = [
   { to: '/reports', label: '분석 리포트', icon: FileText },
   { to: '/incidents', label: '인시던트', icon: AlertTriangle },
   { to: '/repositories', label: '리포지토리', icon: GitBranch },
+  { to: '/team', label: '팀 관리', icon: Users },
   { to: '/settings', label: '설정', icon: Settings },
 ];
 

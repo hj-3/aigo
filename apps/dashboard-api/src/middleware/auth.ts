@@ -7,6 +7,7 @@ interface JwtClaims {
   name: string;
   'custom:orgId': string;
   'custom:role': string;
+  'custom:onboardingCompleted': string;
 }
 
 export function extractClaims(c: Context): JwtClaims | null {
@@ -25,6 +26,20 @@ export function requireAuth(): MiddlewareHandler {
       return c.json({ error: 'UNAUTHORIZED' }, 401);
     }
     c.set('claims', claims);
+    await next();
+    return;
+  };
+}
+
+export function requireOnboarded(): MiddlewareHandler {
+  return async (c: Context, next: Next) => {
+    const claims = extractClaims(c);
+    if (!claims) {
+      return c.json({ error: 'UNAUTHORIZED' }, 401);
+    }
+    if (claims['custom:onboardingCompleted'] !== 'true') {
+      return c.json({ error: 'ONBOARDING_REQUIRED', redirectTo: '/onboarding' }, 403);
+    }
     await next();
     return;
   };

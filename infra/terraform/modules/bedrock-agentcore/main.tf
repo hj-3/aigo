@@ -7,12 +7,10 @@ locals {
     Module    = "bedrock-agentcore"
   })
 
+  # 4 unused agents (code-reviewer, infra-reviewer, risk-reviewer, security-agent) removed.
+  # Orchestrator now handles all 4 analysis personas as a single Strands Agent (Phase L).
   agent_configs = {
-    orchestrator   = "PR 분석 조율, 서브에이전트 병렬 호출, 최종 리포트 생성"
-    code-reviewer  = "코드 품질, 버그 패턴, 테스트 커버리지 분석"
-    infra-reviewer = "Terraform/IaC 보안·비용·HA 검토, AWS Well-Architected 기준 적용"
-    risk-reviewer  = "코드·인프라·보안 결과 종합 리스크 점수 산정 및 머지 가능 여부 판단"
-    security-agent = "OWASP Top 10, CWE, 시크릿 탐지, Prompt Injection 방어"
+    orchestrator   = "단일 멀티 페르소나 PR 분석 — Code/Infra/Security/Risk 4개 페르소나 순차 실행"
     incident-agent = "CloudWatch 알람 기반 장애 자동 조사 및 RCA 리포트 생성"
     fix-agent      = "승인된 발견사항에 대한 unified diff patch 생성 (실행 금지)"
   }

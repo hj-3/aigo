@@ -13,3 +13,9 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "container_environment" {
+  description = "Additional environment variables for the heavy worker container"
+  type        = map(string)
+  default     = {}
+}

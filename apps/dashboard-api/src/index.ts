@@ -10,6 +10,10 @@ import { dashboardRouter } from './routes/dashboard.js';
 import { fixesRouter } from './routes/fixes.js';
 import { jobsRouter } from './routes/jobs.js';
 import { settingsRouter } from './routes/settings.js';
+import { onboardingRouter } from './routes/onboarding.js';
+import { teamRouter } from './routes/team.js';
+import { integrationsRouter } from './routes/integrations.js';
+import { auditLog } from './middleware/audit.js';
 
 const app = new Hono();
 
@@ -23,8 +27,15 @@ app.use('*', cors({
   allowMethods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   maxAge: 86400,
 }));
+// Audit all state-changing operations across all routes
+app.use('*', auditLog());
 
 app.get('/health', (c) => c.json({ status: 'ok' }, 200));
+
+// Multi-tenancy routes (onboarding allowed pre-org; others require onboardingCompleted)
+app.route('/onboarding', onboardingRouter);
+app.route('/team', teamRouter);
+app.route('/integrations', integrationsRouter);
 
 app.route('/dashboard', dashboardRouter);
 app.route('/reports', reportsRouter);

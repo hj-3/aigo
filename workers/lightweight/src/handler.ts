@@ -15,6 +15,7 @@ interface AnalysisQueueMessage {
   readonly jobType: string;
   readonly triggeredBy: string;
   readonly idempotencyKey: string;
+  readonly installationId?: string;
   readonly prContext: {
     readonly prNumber: number;
     readonly prTitle: string;
@@ -30,9 +31,14 @@ interface AnalysisQueueMessage {
 interface RepositoryRecord {
   readonly repoId: string;
   readonly orgId: string;
-  readonly providerRepoFullName: string;
+  readonly fullName: string;
+  readonly providerRepoFullName?: string;
   readonly defaultBranch: string;
-  readonly installationId?: string;
+}
+
+interface IntegrationRecord {
+  readonly installationId: string;
+  readonly status: string;
 }
 
 export async function processRecord(record: SQSRecord): Promise<void> {
@@ -57,20 +63,34 @@ export async function processRecord(record: SQSRecord): Promise<void> {
     ConditionExpression: '#status = :pending',
   });
 
-  // ── 2. Fetch repository details ───────────────────────────────────────────
-  const repo = await ddbGet<RepositoryRecord>({
-    TableName: Config.tableName('Repositories'),
-    Key: { PK: `REPO#${repoId}`, SK: 'METADATA' },
-  });
+  // ── 2. Fetch repository details and org's GitHub installationId ────────────
+  const [repo, githubIntegration] = await Promise.all([
+    ddbGet<RepositoryRecord>({
+      TableName: Config.tableName('Repositories'),
+      Key: { PK: `REPO#${repoId}`, SK: 'METADATA' },
+    }),
+    ddbGet<IntegrationRecord>({
+      TableName: Config.tableName('Integrations'),
+      Key: { PK: `ORG#${orgId}`, SK: 'INTEGRATION#GITHUB' },
+    }),
+  ]);
 
   if (!repo) {
     log.error('Repository not found', { repoId });
     throw new Error(`Repository not found: ${repoId}`);
   }
 
+  // Use per-org installationId from Integrations table (multi-tenant).
+  // Falls back to the installationId from the SQS message (set by the webhook handler).
+  const installationId =
+    (githubIntegration?.status === 'ACTIVE' ? githubIntegration.installationId : undefined) ??
+    message.installationId;
+
+  const repoFullName = repo.fullName ?? repo.providerRepoFullName ?? '';
+
   // ── 3. Fetch PR diff and store to S3 ─────────────────────────────────────
-  log.info('Fetching PR diff', { prNumber: prContext.prNumber });
-  const diff = await fetchAndStorePrDiff(repo.providerRepoFullName, prContext, orgId);
+  log.info('Fetching PR diff', { prNumber: prContext.prNumber, installationId });
+  const diff = await fetchAndStorePrDiff(repoFullName, prContext, orgId, installationId);
 
   await s3PutObject(Config.s3.diffsBucket, prContext.diffS3Key, diff.diffContent, 'text/plain');
 
@@ -82,9 +102,9 @@ export async function processRecord(record: SQSRecord): Promise<void> {
     jobType: message.jobType,
     prContext: {
       ...prContext,
-      repoFullName: repo.providerRepoFullName,
+      repoFullName,
       defaultBranch: repo.defaultBranch,
-      installationId: repo.installationId ?? '',
+      installationId: installationId ?? '',
     },
     diffMetadata: {
       changedFiles: diff.changedFiles,

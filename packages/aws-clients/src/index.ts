@@ -4,3 +4,5 @@ export * from './s3.js';
 export * from './sqs.js';
 export * from './secretsmanager.js';
 export * from './eventbridge.js';
+export * from './ssm.js';
+export * from './cognito-admin.js';

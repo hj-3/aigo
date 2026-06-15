@@ -1,7 +1,23 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Github, Slack, CheckCircle, XCircle } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { useAuthStore } from '@/store/auth';
+
+interface IntegrationStatus {
+  github: {
+    connected: boolean;
+    accountLogin?: string;
+    installedAt?: string;
+    installUrl: string;
+  };
+  slack: {
+    connected: boolean;
+    teamName?: string;
+    teamId?: string;
+    connectUrl: string;
+  };
+}
 
 interface OrgSettings {
   readonly orgId: string;
@@ -24,6 +40,16 @@ export function SettingsPage() {
   const { data: settings, isLoading } = useQuery<OrgSettings>({
     queryKey: ['settings'],
     queryFn: () => api.get<OrgSettings>('/settings'),
+  });
+
+  const { data: integrations } = useQuery<IntegrationStatus>({
+    queryKey: ['integrations'],
+    queryFn: () => api.get<IntegrationStatus>('/integrations'),
+  });
+
+  const disconnectSlackMutation = useMutation({
+    mutationFn: () => api.delete('/integrations/slack'),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['integrations'] }),
   });
 
   const [draft, setDraft] = useState<Partial<SettingsDraft>>({});
@@ -181,6 +207,73 @@ export function SettingsPage() {
             }).format(new Date(settings.updatedAt))}
           </p>
         )}
+      </div>
+
+      {/* Integrations Section */}
+      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
+        <h2 className="font-semibold text-gray-900 dark:text-white">연동</h2>
+
+        {/* GitHub */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <Github className="w-6 h-6 text-gray-700" />
+            <div>
+              <p className="text-sm font-medium text-gray-900">GitHub</p>
+              {integrations?.github?.connected
+                ? <p className="text-xs text-gray-500 mt-0.5">@{integrations.github.accountLogin} 연결됨</p>
+                : <p className="text-xs text-gray-500 mt-0.5">GitHub App이 연결되지 않았습니다</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {integrations?.github?.connected
+              ? <CheckCircle className="w-5 h-5 text-green-500" />
+              : <XCircle className="w-5 h-5 text-gray-300" />}
+            {!integrations?.github?.connected && integrations?.github?.installUrl && (
+              <a
+                href={integrations.github.installUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+              >
+                App 설치
+              </a>
+            )}
+          </div>
+        </div>
+
+        {/* Slack */}
+        <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-3">
+            <Slack className="w-6 h-6 text-purple-600" />
+            <div>
+              <p className="text-sm font-medium text-gray-900">Slack</p>
+              {integrations?.slack?.connected
+                ? <p className="text-xs text-gray-500 mt-0.5">{integrations.slack.teamName} 연결됨</p>
+                : <p className="text-xs text-gray-500 mt-0.5">Slack 워크스페이스가 연결되지 않았습니다</p>}
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {integrations?.slack?.connected
+              ? <CheckCircle className="w-5 h-5 text-green-500" />
+              : <XCircle className="w-5 h-5 text-gray-300" />}
+            {integrations?.slack?.connected ? (
+              <button
+                onClick={() => disconnectSlackMutation.mutate()}
+                disabled={disconnectSlackMutation.isPending}
+                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+              >
+                연결 해제
+              </button>
+            ) : integrations?.slack?.connectUrl ? (
+              <a
+                href={integrations.slack.connectUrl}
+                className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700"
+              >
+                Slack 연결
+              </a>
+            ) : null}
+          </div>
+        </div>
       </div>
 
       {!hasAdminRole && (

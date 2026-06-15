@@ -98,15 +98,12 @@ resource "aws_apigatewayv2_route" "routes" {
   authorizer_id      = startswith(each.key, "POST /webhooks") || each.key == "GET /health" ? null : aws_apigatewayv2_authorizer.cognito.id
 }
 
-# Allow API Gateway to invoke each unique Lambda alias
-locals {
-  unique_lambda_arns = toset(values(var.lambda_arns))
-}
-
+# Allow API Gateway to invoke each Lambda — keyed by route (static) to avoid
+# for_each over computed ARN values which Terraform cannot enumerate at plan time.
 resource "aws_lambda_permission" "api_gateway" {
-  for_each = local.unique_lambda_arns
+  for_each = var.lambda_arns
 
-  statement_id  = "AllowAPIGatewayInvoke"
+  statement_id  = "AllowAPIGW-${replace(replace(replace(replace(each.key, " ", "-"), "/", "-"), "{", ""), "}", "")}"
   action        = "lambda:InvokeFunction"
   function_name = element(split(":", each.value), 6)
   qualifier     = element(split(":", each.value), 7)

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       component:
-        description: 'Component to deploy (all | infra | api | dashboard)'
+        description: 'Component to deploy (all | infra | api | orchestrator | dashboard)'
         required: false
         default: 'all'
 
@@ -33,9 +33,10 @@ jobs:
     name: Detect Changed Components
     runs-on: ubuntu-latest
     outputs:
-      infra:     ${{ steps.diff.outputs.infra }}
-      api:       ${{ steps.diff.outputs.api }}
-      dashboard: ${{ steps.diff.outputs.dashboard }}
+      infra:        ${{ steps.diff.outputs.infra }}
+      api:          ${{ steps.diff.outputs.api }}
+      orchestrator: ${{ steps.diff.outputs.orchestrator }}
+      dashboard:    ${{ steps.diff.outputs.dashboard }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -46,16 +47,18 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             COMP="${{ inputs.component }}"
-            echo "infra=$(    [[ "$COMP" == "all" || "$COMP" == "infra"     ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-            echo "api=$(      [[ "$COMP" == "all" || "$COMP" == "api"       ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
-            echo "dashboard=$(  [[ "$COMP" == "all" || "$COMP" == "dashboard" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "infra=$(        [[ "$COMP" == "all" || "$COMP" == "infra"         ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "api=$(          [[ "$COMP" == "all" || "$COMP" == "api"           ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "orchestrator=$( [[ "$COMP" == "all" || "$COMP" == "orchestrator"  ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "dashboard=$(    [[ "$COMP" == "all" || "$COMP" == "dashboard"     ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           else
             FILES=$(git diff --name-only HEAD~1 HEAD)
             echo "Changed files:"
             echo "$FILES"
-            grep -qE "^infra/"                                                          <<< "$FILES" && echo "infra=true"     >> "$GITHUB_OUTPUT" || echo "infra=false"     >> "$GITHUB_OUTPUT"
-            grep -qE "^(connectors|workers/lightweight|apps/dashboard-api|packages)/"  <<< "$FILES" && echo "api=true"       >> "$GITHUB_OUTPUT" || echo "api=false"       >> "$GITHUB_OUTPUT"
-            grep -qE "^(apps/dashboard|packages)/"                                     <<< "$FILES" && echo "dashboard=true" >> "$GITHUB_OUTPUT" || echo "dashboard=false" >> "$GITHUB_OUTPUT"
+            grep -qE "^infra/"                                                                    <<< "$FILES" && echo "infra=true"        >> "$GITHUB_OUTPUT" || echo "infra=false"        >> "$GITHUB_OUTPUT"
+            grep -qE "^(connectors|workers/lightweight|apps/dashboard-api|packages)/"            <<< "$FILES" && echo "api=true"          >> "$GITHUB_OUTPUT" || echo "api=false"          >> "$GITHUB_OUTPUT"
+            grep -qE "^(agents/orchestrator|tools|libs/common|scripts/deploy-orchestrator\.sh)" <<< "$FILES" && echo "orchestrator=true" >> "$GITHUB_OUTPUT" || echo "orchestrator=false" >> "$GITHUB_OUTPUT"
+            grep -qE "^(apps/dashboard|packages)/"                                               <<< "$FILES" && echo "dashboard=true"    >> "$GITHUB_OUTPUT" || echo "dashboard=false"    >> "$GITHUB_OUTPUT"
           fi
 
   # ──────────────────────────────────────────────────────
@@ -196,7 +199,42 @@ jobs:
         run: bash scripts/deploy-lambda.sh ${{ matrix.package.name }} ${{ matrix.package.function }}
 
   # ──────────────────────────────────────────────────────
-  # 3. Heavy Worker Docker Image
+  # 3. Orchestrator Python Lambda
+  # ──────────────────────────────────────────────────────
+  deploy-orchestrator-lambda:
+    name: Deploy Orchestrator Lambda (Python)
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-infra.result == 'success' || needs.deploy-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.orchestrator == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and deploy Orchestrator Lambda
+        run: bash scripts/deploy-orchestrator.sh
+        env:
+          PROJECT: aigo
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+  # ──────────────────────────────────────────────────────
+  # 4. Heavy Worker Docker Image
   # ──────────────────────────────────────────────────────
   deploy-heavy-worker:
     name: Deploy Heavy Worker (ECS)
@@ -248,7 +286,7 @@ jobs:
           aws ecs register-task-definition --cli-input-json file://new-task-def.json
 
   # ──────────────────────────────────────────────────────
-  # 4. Dashboard (S3 + CloudFront invalidation)
+  # 5. Dashboard (S3 + CloudFront invalidation)
   # ──────────────────────────────────────────────────────
   deploy-dashboard:
     name: Deploy Dashboard (S3)

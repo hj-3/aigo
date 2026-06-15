@@ -163,42 +163,40 @@ Attributes:
 
 **목적**: 분석 결과 리포트 (read 많음, 대시보드 핵심)
 
-| 키 | 형식 |
-|----|------|
-| PK | `REPORT#{reportId}` |
-| GSI1 PK | `jobId` |
-| GSI2 PK | `repoId` |
-| GSI2 SK | `createdAt` |
-| GSI3 PK | `orgId#approvalStatus` |
-| GSI3 SK | `createdAt` |
+| 키 | 형식 | 예시 |
+|----|------|------|
+| PK | `REPORT#{reportId}` | `REPORT#01HN5X...-report` |
+| GSI1 PK | `JOB#{jobId}` | `JOB#01HN5X...` |
+| GSI1 SK | `createdAt` | ISO 8601 |
+| GSI2 PK | `REPO#{repoId}` | `REPO#myorg/api` |
+| GSI2 SK | `createdAt` | ISO 8601 |
+| GSI3 PK | `ORG#{orgId}` | `ORG#01HN5X...` ← dashboard-api가 이 형식으로 쿼리 |
+| GSI3 SK | `{approvalStatus}#{createdAt}` | `PENDING#2026-06-12T10:00:00Z` |
 
 ```
 Attributes:
-  reportId           String   ULID
-  orgId              String
-  repoId             String
-  jobId              String
-  prNumber           Number
-  prTitle            String
-  commitSha          String
-  riskScore          Number   0–100
-  riskLevel          String   LOW | MEDIUM | HIGH | CRITICAL
-  mergeRecommendation String  APPROVE | CONDITIONAL | BLOCK
-  approvalStatus     String   NEEDS_REVIEW | APPROVED | REJECTED | FIX_REQUESTED
-  summary            String   전체 요약 (1–2 문장)
-  agentSummaries     Map      {code, infra, security, risk} 각 요약
-  requiredActions    List     머지 전 필수 조치 목록
-  reportS3Key        String   reports/{orgId}/{reportId}/report.md
-  createdAt          String
-  approvedAt         String
-  approvedBy         String
+  reportId            String   {jobId}-report
+  orgId               String
+  repoId              String   {owner}/{repo}
+  jobId               String
+  riskScore           Number   0–100  (CRITICAL×25 + HIGH×10 + MEDIUM×3 + LOW×1, max 100)
+  riskLevel           String   LOW | MEDIUM | HIGH | CRITICAL
+  mergeRecommendation String   APPROVE | REQUEST_CHANGES | BLOCK
+  approvalStatus      String   PENDING | APPROVED | REJECTED
+  summary             String   전체 요약 (2–3 문장)
+  findingsBySeverity  Map      {CRITICAL: N, HIGH: N, MEDIUM: N, LOW: N, INFO: N}
+  reportS3Key         String   Optional S3 key for full report JSON
+  createdAt           String
+  updatedAt           String
 ```
 
 **접근 패턴**:
 - 리포트 단건: PK
-- Job의 리포트: GSI1
-- 레포별 최근 리포트: GSI2
-- 승인 대기 목록: GSI3 (`orgId#NEEDS_REVIEW`, createdAt 역순)
+- Job의 리포트: GSI1 (`JOB#{jobId}`)
+- 레포별 최근 리포트: GSI2 (`REPO#{repoId}`)
+- 대시보드 org별 최근 리포트: GSI3 (`ORG#{orgId}`, createdAt 역순)
+
+> **주의**: GSI3PK는 `ORG#{orgId}` 형식이며, `dashboard-api`가 쿼리하는 인덱스 이름은 `GSI3-orgApprovalStatus-createdAt-index`
 
 ---
 
@@ -389,6 +387,75 @@ Attributes:
 
 ---
 
+### Integrations
+
+**목적**: 조직별 GitHub App 설치 및 Slack 워크스페이스 연동 정보
+
+| 키 | 형식 | 예시 |
+|----|------|------|
+| PK | `ORG#{orgId}` | `ORG#01HN5X` |
+| SK | `INTEGRATION#GITHUB` 또는 `INTEGRATION#SLACK` | |
+| GSI1 PK | `ORG#{orgId}` | |
+| GSI1 SK | `INTEGRATION#GITHUB` | |
+| GSI2 PK | `INSTALLATION#{installationId}` (GitHub) 또는 `SLACK_TEAM#{teamId}` (Slack) | `INSTALLATION#12345678` |
+
+```
+GitHub 연동 Attributes:
+  type             String   GITHUB
+  installationId   String   GitHub App installation ID
+  accountLogin     String   GitHub 계정/조직명
+  status           String   ACTIVE | UNINSTALLED | SUSPENDED
+  createdAt        String
+  updatedAt        String
+
+Slack 연동 Attributes:
+  type             String   SLACK
+  slackTeamId      String   Slack workspace team ID
+  slackTeamName    String   Slack workspace name
+  botUserId        String   Bot user ID
+  scope            String   OAuth scopes
+  status           String   ACTIVE | DISCONNECTED
+  createdAt        String
+  updatedAt        String
+```
+
+**Slack Bot Token 저장 위치 (SSM Parameter Store)**:
+```
+/{project}/integrations/slack/{orgId}/bot-token  (SecureString)
+```
+
+**조회 패턴**:
+- 조직의 GitHub 연동 상태: `PK = ORG#{orgId}`, `SK = INTEGRATION#GITHUB`
+- installationId → orgId 역조회: `GSI2` `INSTALLATION#{installationId}`
+- Slack teamId → orgId 역조회: `GSI2` `SLACK_TEAM#{teamId}`
+
+---
+
+### OrgInvitations
+
+**목적**: 조직 팀원 초대 관리 (TTL 7일)
+
+| 키 | 형식 | 예시 |
+|----|------|------|
+| PK | `ORG#{orgId}` | `ORG#01HN5X` |
+| SK | `INVITATION#{invitationId}` | `INVITATION#01HN5XABC` |
+| GSI1 PK | `EMAIL#{email}` | `EMAIL#user@company.com` |
+| GSI1 SK | `createdAt` | ISO 8601 |
+
+```
+Attributes:
+  invitationId  String   ULID
+  orgId         String
+  email         String   초대받는 이메일
+  role          String   ADMIN | REVIEWER | VIEWER
+  status        String   PENDING | ACCEPTED | EXPIRED
+  invitedBy     String   초대한 userId
+  createdAt     String
+  ttl           Number   Unix timestamp (7일 후)
+```
+
+---
+
 ## Finding 표준 Schema
 
 모든 Reviewer Agent는 동일한 Finding schema를 반환한다.
@@ -505,3 +572,32 @@ backup/dynamodb/{tableName}/{date}/export.json
 ### kb_tools 검색 방식
 
 Agent가 `kb_tools`를 통해 벡터 유사도 검색으로 관련 문서 조회. 직접 S3 접근 금지.
+
+---
+
+## AgentMemory Table (Table #15)
+
+에이전트의 장기 기억 저장소. PR 분석 결과, 인시던트 RCA, 개발자 패턴, 인간 승인 피드백을 90일~1년 보관.
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| PK | String | `MEMORY#{type}#ORG#{orgId}#{entityKey}` |
+| SK | String | ISO8601 타임스탬프 (시간순 정렬) |
+| memoryType | String | `PR_ANALYSIS` / `INCIDENT` / `APPROVAL_FEEDBACK` |
+| orgId | String | 조직 ID |
+| GSI1PK | String | `ORG#{orgId}#REPO#{repoId}` 또는 `ORG#{orgId}#SERVICE#{service}` |
+| GSI1SK | String | 타임스탬프 |
+| GSI2PK | String | `ORG#{orgId}#AUTHOR#{authorLogin}` 또는 `ORG#{orgId}#APPROVALS` |
+| GSI2SK | String | 타임스탬프 |
+| ttl | Number | 만료 Unix timestamp (PR: 90일, Incident: 1년) |
+
+**인덱스:**
+- `GSI1-repo-time-index`: repo/service별 최근 분석 조회 → Orchestrator 사전 컨텍스트 조회
+- `GSI2-author-time-index`: 개발자별 패턴 조회 → 반복 실수 탐지
+
+**메모리 활용 흐름:**
+1. PR 분석 시작 → `get_repo_memory` + `get_developer_memory` 호출로 과거 이력 조회
+2. 분석 완료 → `save_pr_analysis_memory` 호출로 결과 저장
+3. 인시던트 발생 → `get_incident_memory` 호출로 유사 과거 장애 조회
+4. 인시던트 해결 → `save_incident_memory` 호출로 RCA 저장
+5. 사용자 승인/거절 → `POST /reports/:id/approve` → AgentMemory에 인간 피드백 기록

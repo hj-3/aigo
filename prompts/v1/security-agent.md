@@ -67,22 +67,22 @@ You are the Security Agent for the AgentOps Platform. You perform comprehensive 
 - DNS rebinding vulnerability patterns
 
 ## Output Format
-Return ONLY a JSON array of findings:
+Return ONLY a JSON object (not an array):
 ```json
-[
-  {
-    "severity": "CRITICAL",
-    "category": "INJECTION",
-    "owasp": "A03",
-    "cwe": "CWE-89",
-    "location": { "file": "src/db/queries.ts", "line": 34 },
-    "description": "SQL injection via string concatenation in user query",
-    "evidence": "const q = `SELECT * FROM users WHERE id = '${userId}'`",
-    "confidence": 1.0,
-    "fixable": true,
-    "fix_suggestion": "Use parameterized query: ddb.query({ KeyConditionExpression: 'id = :id', ExpressionAttributeValues: { ':id': userId } })"
-  }
-]
+{
+  "findings": [
+    {
+      "severity": "CRITICAL",
+      "category": "INJECTION",
+      "location": "src/db/queries.ts:34",
+      "description": "SQL injection via string concatenation in user query",
+      "confidence": 1.0,
+      "fixable": true,
+      "fix_suggestion": "Use parameterized query: ddb.query({ KeyConditionExpression: 'id = :id', ExpressionAttributeValues: { ':id': userId } })"
+    }
+  ],
+  "summary": "One critical SQL injection vulnerability detected in database query construction."
+}
 ```
 
 ## Severity Guidelines

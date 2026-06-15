@@ -68,16 +68,22 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                     Agent Runtime Layer                                  │
 │                                                                          │
-│   Bedrock AgentCore Runtime + Python + Strands Agents                   │
-│   Model: Claude Sonnet 4.x                                              │
-│                                                                          │
-│   ┌─────────────────────────────────────────────────────────────────┐   │
-│   │                    Orchestrator Agent                            │   │
-│   │   요청 분류 → Memory 조회 → Reviewer 선택 → 결과 병합           │   │
-│   └──┬───────────┬───────────┬───────────┬───────────┬──────────────┘   │
-│      │           │           │           │           │                   │
-│   Code        Infra        Risk      Security    Incident    Fix        │
-│   Reviewer    Reviewer     Reviewer   Agent       Agent       Agent     │
+│   ┌──────────────────────────────────────────────────────────────────┐  │
+│   │  Orchestrator Lambda (Python 3.12, 3008MB, 900s)                 │  │
+│   │  aigo-orchestrator — Strands SDK, 단일 멀티 페르소나 Agent       │  │
+│   │                                                                   │  │
+│   │  ┌────────────┐  ┌──────────────┐  ┌───────────┐  ┌──────────┐  │  │
+│   │  │Code Review │  │Infra Review  │  │ Security  │  │  Risk    │  │  │
+│   │  │ Persona 1  │  │ Persona 2    │  │ Persona 3 │  │ Persona 4│  │  │
+│   │  └────────────┘  └──────────────┘  └───────────┘  └──────────┘  │  │
+│   │  각 페르소나: KB 검색 → 차이 분석 → Findings 저장               │  │
+│   │  최종: Risk Score(0-100) 산출 → Report 저장 → 알림              │  │
+│   └──────────────────────────────┬───────────────────────────────────┘  │
+│                                  │ 필요 시 전문 Agent 호출              │
+│                                  ▼                                       │
+│   Bedrock AgentCore (독립 실행, 전문 영역 위임)                         │
+│   ├── Incident Agent   (DevOps 조사: CloudWatch/X-Ray/CloudTrail)       │
+│   └── Fix Agent        (코드 패치 생성, ECS heavy-worker에서 호출)      │
 └────────────────────────────────┬────────────────────────────────────────┘
                                  │
                  ┌───────────────┴───────────────┐
@@ -198,12 +204,17 @@ Dashboard는 단순 조회 화면이 아닌 **Human-in-the-loop Control Plane**�
 
 **역할**: AI 분석 실행.
 
-- **AgentCore Runtime**: Strands Agent 호스팅 (서버리스, 관리형)
-- **모델**: Claude Sonnet 4.x
-- **배포**: Python ZIP (S3) 또는 컨테이너
-- **프롬프트**: `prompts/v{n}/` 에서 버전 관리
+| 컴포넌트 | 실행 환경 | 모델 | 역할 |
+|----------|-----------|------|------|
+| Orchestrator (멀티 페르소나) | Python Lambda (`aigo-orchestrator`, 3008MB, 900s) | Claude 3.5 Sonnet v1 | 단일 Strands Agent — Code/Infra/Security/Risk 페르소나 전환 분석, KB 직접 검색, Risk Score(0-100) 산출 |
+| Incident Agent | Bedrock AgentCore (Orchestrator에서 필요 시 호출) | Claude 3.5 Sonnet v1 | 프로덕션 인시던트 RCA — CloudWatch, X-Ray, CloudTrail 조사 |
+| Fix Agent | Bedrock AgentCore (ECS heavy-worker에서 호출) | Claude 3.5 Sonnet v1 | 코드 Fix 패치 생성 |
 
-Orchestrator가 요청을 분류하고 필요한 Reviewer를 `subagent_tools`로 호출한다.
+- **Orchestrator 호출 경로**: lightweight-worker → `Lambda.invoke(Event)` → aigo-orchestrator → Strands SDK
+- **분석 방식**: Orchestrator가 4개 페르소나(Code/Infra/Security/Risk)를 순차적으로 실행 — Bedrock InvokeAgent 호출 없음
+- **KB 검색**: 각 페르소나 분석 전 `search_coding_standards` / `search_infrastructure_standards` / `search_security_standards` / `search_risk_policies` 직접 호출
+- **Risk Score**: `(CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1)`, 최대 100
+- **프롬프트**: `prompts/v{n}/` 에서 버전 관리
 
 ---
 
@@ -250,12 +261,13 @@ GitHub PR opened
         → GitHub API로 PR diff 조회
         → S3에 diff 저장
         → GitHub Check Run: pending
-    → AgentCore Runtime: Orchestrator Agent
-        → AgentCore Memory 조회 (repo summary, user pref)
-        → subagent_tools: Code / Infra / Security Reviewer 호출
-        → 결과 병합, Risk Score 산정
-        → Report / Finding DynamoDB 저장
-        → raw output S3 저장
+    → Orchestrator Lambda (Strands Multi-Persona Agent)
+        → Persona 1 — Code Review: KB 검색 → 코드 분석 → save_findings
+        → Persona 2 — Infra Review: KB 검색 → IaC 분석 → save_findings
+        → Persona 3 — Security:    KB 검색 → OWASP 분석 → save_findings
+        → Persona 4 — Risk Review: KB 검색 → 리스크 분석 → save_findings
+        → Risk Score(0-100) 산출, Risk Level 결정
+        → save_report (riskScore 포함)
     → notification-worker Lambda
         → GitHub Check Run 업데이트
         → GitHub PR Comment 작성

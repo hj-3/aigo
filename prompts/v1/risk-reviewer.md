@@ -43,30 +43,23 @@ For each finding, estimate:
 - `rollback_complexity`: EASY (git revert) | MEDIUM (migration needed) | HARD (data transformation)
 
 ## Output Format
-Return ONLY a JSON array of findings:
-```json
-[
-  {
-    "severity": "HIGH",
-    "category": "BREAKING_CHANGE",
-    "location": { "file": "src/api/users.ts", "line": 87 },
-    "description": "Removed 'username' field from UserResponse — clients expecting this field will break",
-    "confidence": 0.9,
-    "fixable": false,
-    "fix_suggestion": "Keep 'username' field and mark as deprecated; remove in next major version",
-    "affected_services": ["mobile-app", "partner-api"],
-    "user_impact": "ALL",
-    "rollback_complexity": "MEDIUM"
-  }
-]
-```
-
-## Merge Recommendation
-After listing findings, include a final recommendation object:
+Return ONLY a JSON object (not an array):
 ```json
 {
-  "type": "merge_recommendation",
-  "recommendation": "REQUEST_CHANGES",
-  "rationale": "Breaking API change without deprecation period"
+  "findings": [
+    {
+      "severity": "HIGH",
+      "category": "BREAKING_CHANGE",
+      "location": "src/api/users.ts:87",
+      "description": "Removed 'username' field from UserResponse — clients expecting this field will break",
+      "confidence": 0.9,
+      "fixable": false,
+      "fix_suggestion": "Keep 'username' field and mark as deprecated; remove in next major version",
+      "affected_services": ["mobile-app", "partner-api"],
+      "user_impact": "ALL",
+      "rollback_complexity": "MEDIUM"
+    }
+  ],
+  "summary": "One high severity breaking change detected — API clients will need updates."
 }
 ```

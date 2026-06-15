@@ -1,76 +1,43 @@
 # Phase 4: Strands Agents
 
 ## 개요
-AWS Bedrock AgentCore에서 실행되는 7개 Strands Python Agent 구현.
-모든 에이전트는 Claude Sonnet 4.6 (claude-sonnet-4-6) 모델 사용.
+단일 멀티 페르소나 Strands Agent 기반 설계.  
+Orchestrator Lambda가 4개 페르소나(Code/Infra/Security/Risk)를 직접 수행하며, Bedrock AgentCore는 Incident Agent와 Fix Agent에만 사용.
+
+> **변경 이력**: 초기 설계는 4개 별도 Bedrock Agent(Code/Infra/Risk/Security)를 InvokeAgent로 호출하는 방식이었으나,  
+> 원래 구상의 "단일 Agent 멀티 페르소나" 아키텍처로 전환 완료 (2026-06-12).
 
 ## 에이전트 목록
 
-### 1. Orchestrator Agent (Python Lambda + Strands SDK)
-**역할:** PR 분석 조율, 4개 서브에이전트 순차 호출, 최종 리포트 생성
+### 1. Orchestrator Agent (Python Lambda + Strands SDK) ← 멀티 페르소나
 
-**배포 방식:** `aigo-orchestrator` Python Lambda (runtime: python3.12, timeout: 900s)  
+**역할:** 단일 Strands Agent가 4개 페르소나를 순차 전환하며 PR 분석 수행 → Risk Score(0-100) 산출 → Report 저장 → 알림
+
+**배포 방식:** `aigo-orchestrator` Python Lambda (runtime: python3.12, timeout: 900s, memory: 3008MB)  
 진입점: `agents/orchestrator/lambda_handler.py` → `src/agent.run_analysis()`  
-빌드: `scripts/deploy-orchestrator.sh`
+빌드: `scripts/deploy-orchestrator.sh` → CD 파이프라인 자동 배포
 
-**도구:**
-- subagent_tools.invoke_code_reviewer (diff_content 직접 주입)
-- subagent_tools.invoke_infra_reviewer (diff_content 직접 주입)
-- subagent_tools.invoke_risk_reviewer (diff_content 직접 주입)
-- subagent_tools.invoke_security_agent (diff_content 직접 주입)
-- ddb_tools.save_report
-- ddb_tools.save_findings
-- ddb_tools.update_job_status
-- slack_tools.notify_analysis_complete
-- github_tools.post_pr_comment
+**분석 페르소나:**
+- **Persona 1 — Code Reviewer**: 버그, 레이스 컨디션, N+1, 하드코딩 시크릿, API 하위 호환성
+- **Persona 2 — Infra Reviewer**: IaC(*.tf, *.yaml), IAM 과잉 권한, SG, 암호화 누락, 비용
+- **Persona 3 — Security Agent**: OWASP Top 10, CWE, SQL/Command Injection, 인증/인가
+- **Persona 4 — Risk Reviewer**: 배포 Blast Radius, DB 스키마 변경, 롤백 복잡도
 
-> **서브에이전트 호출 패턴:** 각 서브에이전트(Bedrock Agent)는 Action Group 없이 순수 LLM 추론만 수행.
-> diff 내용을 `InvokeAgent` 프롬프트에 직접 포함하여 pr_tools Action Group 의존성 제거.
+**허용 Tool:**
+- kb_tools: search_coding_standards, search_infrastructure_standards, search_security_standards, search_risk_policies
+- ddb_tools: save_report, save_findings, update_job_status
+- slack_tools: notify_analysis_complete
+- github_tools: post_pr_comment
 
 **IAM 역할:** `aigo-orchestrator-role`
 - bedrock:InvokeModel (Claude 3.5 Sonnet v1)
-- bedrock:InvokeAgent (서브에이전트 호출)
 - bedrock:Retrieve (Knowledge Base)
 - dynamodb, s3, secretsmanager, kms
 
-### 2. Code Reviewer Agent
-**역할:** 코드 품질, 에러 처리, 테스트 커버리지, 성능, 문서화
+### 2. Incident Agent (Bedrock AgentCore — Frontier Agent)
 
-**도구:** pr_tools, kb_tools, ddb_tools
-
-**분석 영역:**
-- 안티패턴, 복잡도 (Cyclomatic > 10)
-- 누락된 null 체크, 삼킨 예외
-- N+1 쿼리, 메모리 누수
-- 공개 API 미문서화
-
-### 3. Infrastructure Reviewer Agent
-**역할:** Terraform/CloudFormation/K8s IaC 보안·비용·HA 검토
-
-**도구:** pr_tools, kb_tools, aws_observability_tools, ddb_tools
-
-**분석 영역:**
-- S3 public access, SG 0.0.0.0/0
-- 암호화 누락 (KMS)
-- PITR/Multi-AZ/DLQ 없음
-- CloudWatch 무제한 로그 보존
-
-### 4. Risk Reviewer Agent
-**역할:** API 브레이킹 체인지, DB 스키마 변경, 배포 위험 평가
-
-**도구:** pr_tools, kb_tools, repo_tools, ddb_tools
-
-**특이사항:** Blast Radius 평가 (affected_services, user_impact, rollback_complexity)
-
-### 5. Security Agent
-**역할:** OWASP Top 10, CWE, AWS 보안 취약점 스캔
-
-**도구:** pr_tools, kb_tools, ddb_tools
-
-**커버리지:** SQL Injection, XSS, SSRF, Auth bypass, Hardcoded secrets, Weak crypto
-
-### 6. Incident Agent
-**역할:** CloudWatch Alarm 인시던트 자동 조사
+**역할:** CloudWatch Alarm 인시던트 자동 조사, RCA 리포트 생성  
+**호출 경로:** Orchestrator → `subagent_tools.invoke_devops_agent`
 
 **도구:** aws_observability_tools, repo_tools, ddb_tools, slack_tools
 
@@ -78,15 +45,17 @@ AWS Bedrock AgentCore에서 실행되는 7개 Strands Python Agent 구현.
 
 **제약:** 조사 및 기록만 — 인프라 변경 절대 금지
 
-### 7. Fix Agent
-**역할:** Fixable 발견사항에 대한 unified diff patch 생성
+### 3. Fix Agent (Bedrock AgentCore — ECS heavy-worker에서 호출)
+
+**역할:** Fixable Finding에 대한 unified diff patch 생성  
+**호출 경로:** heavy-worker ECS container → Bedrock AgentCore Runtime
 
 **도구:** pr_tools, patch_tools, ddb_tools
 
 **핵심 제약:**
 - Patch만 생성 (terraform apply, kubectl 절대 금지)
 - 레포 외부 파일 수정 금지
-- 변경은 최소화 (해당 발견사항만 수정)
+- 변경은 최소화 (해당 Finding만 수정)
 
 ## 공통 설계
 
@@ -131,13 +100,12 @@ def get_config() -> AgentConfig: return AgentConfig()
 
 | 에이전트 | 추가 필드 |
 |---------|----------|
-| orchestrator | `sqs_notification_queue_url`, `s3_diffs_bucket` |
-| code-reviewer | `s3_diffs_bucket` |
-| infra-reviewer | `s3_diffs_bucket` |
-| risk-reviewer | `s3_diffs_bucket` |
-| security-agent | `s3_diffs_bucket` |
+| orchestrator (멀티 페르소나) | `sqs_notification_queue_url`, `s3_diffs_bucket`, `bedrock_kb_id` |
 | incident-agent | `s3_incidents_bucket`, `sqs_notification_queue_url` |
 | fix-agent | `s3_diffs_bucket`, `s3_patches_bucket` |
+
+> **Phase L 변경**: code-reviewer, infra-reviewer, risk-reviewer, security-agent 4개 Bedrock Agent 제거.  
+> Orchestrator Lambda의 단일 Strands Agent가 4개 페르소나를 순차 실행하므로 별도 Agent 불필요.
 
 **이전 패턴**: 각 에이전트가 `_require(key)` 함수와 공통 3개 필드를 개별 중복 선언  
 **현재 패턴**: `require_env()`와 공통 필드는 `BaseAgentConfig` 단일 관리, 에이전트별 고유 필드만 추가

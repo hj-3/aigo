@@ -89,11 +89,16 @@ resource "aws_ecs_task_definition" "heavy_worker" {
       image     = "placeholder" # Updated by CI/CD
       essential = true
 
-      environment = [
-        { name = "STAGE", value = "prod" },
-        { name = "SERVICE_NAME", value = "${local.p}-heavy-worker" },
-        { name = "LOG_LEVEL", value = "INFO" }
-      ]
+      environment = concat(
+        [
+          { name = "STAGE", value = "prod" },
+          { name = "SERVICE_NAME", value = "${local.p}-heavy-worker" },
+          { name = "LOG_LEVEL", value = "INFO" },
+          { name = "AWS_REGION", value = var.aws_region },
+          { name = "DYNAMODB_TABLE_PREFIX", value = var.project },
+        ],
+        [for k, v in var.container_environment : { name = k, value = v }]
+      )
 
       logConfiguration = {
         logDriver = "awslogs"

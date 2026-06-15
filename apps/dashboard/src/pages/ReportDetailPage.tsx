@@ -18,6 +18,7 @@ interface ReportDetail {
   readonly reportId: string;
   readonly repoId: string;
   readonly riskLevel: string;
+  readonly riskScore: number;
   readonly mergeRecommendation: string;
   readonly approvalStatus: string;
   readonly summary: string;
@@ -45,13 +46,13 @@ export function ReportDetailPage() {
 
   const approveMutation = useMutation({
     mutationFn: (comment: string) =>
-      api.post(`/reports/${reportId}/approve`, { comment }),
+      api.post(`/reports/${reportId}/approve`, { decision: 'APPROVED', comment }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['report', reportId] }),
   });
 
   const rejectMutation = useMutation({
     mutationFn: (comment: string) =>
-      api.post(`/reports/${reportId}/reject`, { comment }),
+      api.post(`/reports/${reportId}/approve`, { decision: 'REJECTED', comment }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ['report', reportId] }),
   });
 
@@ -76,7 +77,12 @@ export function ReportDetailPage() {
           <p className="text-gray-500 text-sm mt-1 font-mono">{report.reportId}</p>
         </div>
         <div className="flex items-center gap-3">
-          <span className={riskLevelBadge(report.riskLevel)}>Risk: {report.riskLevel}</span>
+          <span className={riskLevelBadge(report.riskLevel)}>
+            {report.riskLevel}
+            {report.riskScore !== undefined && (
+              <span className="ml-1 font-mono text-xs opacity-80">({report.riskScore}/100)</span>
+            )}
+          </span>
           <span className={riskLevelBadge(
             report.approvalStatus === 'APPROVED' ? 'LOW'
             : report.approvalStatus === 'REJECTED' ? 'CRITICAL'

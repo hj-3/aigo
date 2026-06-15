@@ -27,6 +27,7 @@ export async function fetchAndStorePrDiff(
   repoFullName: string,
   prContext: PrContext,
   _orgId: string,
+  installationId?: string,
 ): Promise<FetchedDiff> {
   const githubSecretArn = process.env['GITHUB_SECRET_ARN']!;
   const credentials = await getSecretJson<{
@@ -35,7 +36,13 @@ export async function fetchAndStorePrDiff(
     installationId: string;
   }>(githubSecretArn);
 
-  const octokit = await createOctokitWithInstallation(credentials);
+  // Use per-org installationId if provided; fall back to global credentials
+  const effectiveInstallationId = installationId ?? credentials.installationId;
+  const octokit = await createOctokitWithInstallation({
+    ...credentials,
+    installationId: effectiveInstallationId,
+  });
+
   const [owner, repo] = repoFullName.split('/') as [string, string];
 
   // Fetch PR diff
@@ -72,6 +79,7 @@ export async function fetchAndStorePrDiff(
     fileCount: files.length,
     additions,
     deletions,
+    installationId: effectiveInstallationId,
   });
 
   return {
