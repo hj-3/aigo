@@ -8,6 +8,13 @@ data "aws_acm_certificate" "wildcard" {
   most_recent = true
 }
 
+# ACM certificate (seolphung.com + *.seolphung.com SAN) — ap-northeast-2 for API Gateway
+data "aws_acm_certificate" "regional" {
+  domain      = "seolphung.com"
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
 # Route53 hosted zone — created at domain registration, referenced only
 data "aws_route53_zone" "main" {
   name         = "seolphung.com."
@@ -559,6 +566,37 @@ resource "aws_route53_record" "app_aaaa" {
   alias {
     name                   = module.cloudfront.distribution_domain
     zone_id                = "Z2FDTNDATAQYW2"
+    evaluate_target_health = false
+  }
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API Gateway Custom Domain (api.seolphung.com)
+# ──────────────────────────────────────────────────────────────────────────────
+resource "aws_apigatewayv2_domain_name" "api" {
+  domain_name = "api.${var.domain_name}"
+
+  domain_name_configuration {
+    certificate_arn = data.aws_acm_certificate.regional.arn
+    endpoint_type   = "REGIONAL"
+    security_policy = "TLS_1_2"
+  }
+}
+
+resource "aws_apigatewayv2_api_mapping" "api" {
+  api_id      = module.api_gateway.api_id
+  domain_name = aws_apigatewayv2_domain_name.api.domain_name
+  stage       = "prod"
+}
+
+resource "aws_route53_record" "api_a" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].target_domain_name
+    zone_id                = aws_apigatewayv2_domain_name.api.domain_name_configuration[0].hosted_zone_id
     evaluate_target_health = false
   }
 }
