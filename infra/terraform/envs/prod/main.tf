@@ -76,6 +76,8 @@ module "ses" {
   project         = var.project
   domain_name     = "seolphung.com"
   route53_zone_id = data.aws_route53_zone.main.zone_id
+  aws_region      = var.aws_region
+  alert_email     = var.alert_email
   tags            = local.common_tags
 }
 

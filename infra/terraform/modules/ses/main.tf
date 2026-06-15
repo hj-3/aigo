@@ -37,18 +37,39 @@ resource "aws_route53_record" "ses_spf" {
   records = ["v=spf1 include:amazonses.com ~all"]
 }
 
-# DMARC record — recommended for production email
+# Custom MAIL FROM domain — makes SPF alignment pass for DMARC
+# Return-Path: bounce@mail.<domain> (same org domain as From: @<domain>)
+resource "aws_ses_domain_mail_from" "main" {
+  domain           = aws_ses_domain_identity.main.domain
+  mail_from_domain = "mail.${var.domain_name}"
+  behavior_on_mx_failure = "REJECT_MESSAGE"
+}
+
+# MX record for custom MAIL FROM domain (SES bounce/feedback endpoint)
+resource "aws_route53_record" "ses_mail_from_mx" {
+  zone_id = var.route53_zone_id
+  name    = "mail.${var.domain_name}"
+  type    = "MX"
+  ttl     = 300
+  records = ["10 feedback-smtp.${var.aws_region}.amazonses.com"]
+}
+
+# SPF record for custom MAIL FROM subdomain
+resource "aws_route53_record" "ses_mail_from_spf" {
+  zone_id = var.route53_zone_id
+  name    = "mail.${var.domain_name}"
+  type    = "TXT"
+  ttl     = 300
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+# DMARC record — p=none for monitoring; escalate to quarantine/reject after confirming alignment
 resource "aws_route53_record" "ses_dmarc" {
   zone_id = var.route53_zone_id
   name    = "_dmarc.${var.domain_name}"
   type    = "TXT"
-  ttl     = 600
-  records = ["v=DMARC1; p=quarantine; rua=mailto:dmarc@${var.domain_name}"]
-}
-
-# Verify the noreply@seolphung.com email address specifically
-resource "aws_ses_email_identity" "noreply" {
-  email = "noreply@${var.domain_name}"
+  ttl     = 300
+  records = ["v=DMARC1; p=none; rua=mailto:${var.alert_email}"]
 }
 
 # ──────────────────────────────────────────────────────────────────────────────

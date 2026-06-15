@@ -3,11 +3,6 @@ output "domain_identity_arn" {
   description = "SES domain identity ARN — pass to Cognito as ses_email_identity_arn"
 }
 
-output "email_identity_arn" {
-  value       = aws_ses_email_identity.noreply.arn
-  description = "SES noreply email identity ARN"
-}
-
 output "cognito_ses_role_arn" {
   value       = aws_iam_role.cognito_ses.arn
   description = "IAM role ARN that allows Cognito to send via SES"
