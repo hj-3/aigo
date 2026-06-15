@@ -637,6 +637,8 @@ resource "aws_iam_policy" "github_actions_tf_platform" {
       { Sid = "CloudTrailFull", Effect = "Allow", Action = ["cloudtrail:*"], Resource = "*" },
       { Sid = "SSMFull", Effect = "Allow", Action = ["ssm:*"], Resource = "*" },
       { Sid = "Route53Full", Effect = "Allow", Action = ["route53:*"], Resource = "*" },
+      { Sid = "SESFull", Effect = "Allow", Action = ["ses:*"], Resource = "*" },
+      { Sid = "SNSFull", Effect = "Allow", Action = ["sns:*"], Resource = "*" },
       { Sid = "ACMRead", Effect = "Allow", Action = ["acm:ListCertificates", "acm:DescribeCertificate", "acm:GetCertificate", "acm:ListTagsForCertificate"], Resource = "*" },
     ]
   })
