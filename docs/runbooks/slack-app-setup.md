@@ -55,23 +55,26 @@ https://api.seolphung.com/auth/slack/callback
 `/approve`, `/reject`, `/investigate` 명령어 수신 Lambda는 배포되어 있으나
 Slack App에 URL이 등록되지 않은 상태입니다.
 
+API Gateway 라우트: `POST /webhooks/slack` → `aigo-slack-connector` Lambda
+
 1. **Slash Commands** → 각 커맨드 **Edit**
 
    | 커맨드 | Request URL |
    |--------|-------------|
-   | `/approve` | `https://api.seolphung.com/slack/commands` |
-   | `/reject` | `https://api.seolphung.com/slack/commands` |
-   | `/investigate` | `https://api.seolphung.com/slack/commands` |
+   | `/approve` | `https://api.seolphung.com/webhooks/slack` |
+   | `/reject` | `https://api.seolphung.com/webhooks/slack` |
+   | `/investigate` | `https://api.seolphung.com/webhooks/slack` |
 
 2. **Interactivity & Shortcuts** → **Interactivity** 활성화 → **Request URL**:
 
 ```
-https://api.seolphung.com/slack/events
+https://api.seolphung.com/webhooks/slack
 ```
 
 3. **Save Changes**
 
 > 이 설정이 완료되어야 Slack 채널에서 `/approve <reportId>` 등의 명령이 동작합니다.
+> `/slack/commands` 또는 `/slack/events`는 존재하지 않는 경로입니다.
 
 ---
 
