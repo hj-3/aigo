@@ -41,7 +41,7 @@ export function FixCenterPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">수정 센터</h1>
+        <h1 className="text-2xl font-bold text-term">수정 센터</h1>
         <div className="flex gap-2">
           {STATUS_OPTIONS.map((s) => (
             <button
@@ -49,8 +49,8 @@ export function FixCenterPage() {
               onClick={() => setStatus(s)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 status === s
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  ? 'bg-accent text-white'
+                  : 'bg-canvas text-term-secondary hover:bg-surface hover:text-term'
               }`}
             >
               {s}
@@ -59,30 +59,30 @@ export function FixCenterPage() {
         </div>
       </div>
 
-      {isLoading && <div className="text-center py-12 text-gray-500">로딩 중...</div>}
+      {isLoading && <div className="text-center py-12 text-term-secondary">로딩 중...</div>}
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Fix ID</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">리포트</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">상태</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">요청자</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">패치 요약</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">생성 시간</th>
+            <tr className="border-b bg-canvas">
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">Fix ID</th>
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">리포트</th>
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">상태</th>
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">요청자</th>
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">패치 요약</th>
+              <th className="text-left text-xs font-medium text-term-secondary uppercase tracking-wider px-6 py-3">생성 시간</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+          <tbody className="divide-y">
             {(fixes ?? []).map((fix) => (
-              <tr key={fix.fixId} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                <td className="px-6 py-4 font-mono text-xs text-gray-700 dark:text-gray-300">
+              <tr key={fix.fixId} className="hover:bg-canvas transition-colors">
+                <td className="px-6 py-4 font-mono text-xs text-term">
                   {fix.prUrl ? (
                     <a
                       href={fix.prUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                      className="text-accent hover:opacity-80"
                     >
                       {fix.fixId.slice(0, 12)}…
                     </a>
@@ -94,7 +94,7 @@ export function FixCenterPage() {
                   <Link
                     to="/reports/$reportId"
                     params={{ reportId: fix.reportId }}
-                    className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                    className="text-sm text-accent hover:opacity-80"
                   >
                     {fix.reportId.slice(0, 12)}…
                   </Link>
@@ -102,17 +102,17 @@ export function FixCenterPage() {
                 <td className="px-6 py-4">
                   <span className={riskLevelBadge(statusBadgeClass(fix.status))}>{fix.status}</span>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{fix.requestedBy}</td>
-                <td className="px-6 py-4 text-sm text-gray-500 max-w-xs truncate">
+                <td className="px-6 py-4 text-sm text-term">{fix.requestedBy}</td>
+                <td className="px-6 py-4 text-sm text-term-secondary max-w-xs truncate">
                   {fix.patchSummary ?? '—'}
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-500">{formatDate(fix.createdAt)}</td>
+                <td className="px-6 py-4 text-sm text-term-secondary">{formatDate(fix.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {(fixes ?? []).length === 0 && !isLoading && (
-          <p className="text-center py-12 text-gray-500">{status} 상태의 수정 요청이 없습니다.</p>
+          <p className="text-center py-12 text-term-secondary">{status} 상태의 수정 요청이 없습니다.</p>
         )}
       </div>
     </div>

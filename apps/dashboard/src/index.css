@@ -1,35 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --radius: 0.5rem;
+    --radius: 0.375rem;
+    --surface: #ffffff;
+    --canvas: #f6f8fa;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-secondary: #656d76;
+    --accent: #0969da;
+    --green: #1a7f37;
+    --yellow: #9a6700;
+    --red: #cf222e;
+    --orange: #bc4c00;
   }
 
-  * {
-    @apply border-gray-200 dark:border-gray-800;
+  .dark {
+    --surface: #161b22;
+    --canvas: #0d1117;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text-secondary: #8b949e;
+    --accent: #58a6ff;
+    --green: #3fb950;
+    --yellow: #d29922;
+    --red: #f85149;
+    --orange: #db6d28;
+  }
+
+  html {
+    @apply font-mono;
   }
 
   body {
-    @apply font-sans antialiased text-gray-900 dark:text-gray-100;
+    background-color: var(--canvas);
+    color: var(--text);
+    @apply antialiased text-sm;
+  }
+
+  * {
+    border-color: var(--border);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
   }
 }
 
 @layer components {
+  /* Severity badges */
   .badge-critical {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400;
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium
+           bg-red-500/15 text-red-400 border border-red-500/30
+           dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/20;
   }
   .badge-high {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400;
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium
+           bg-orange-500/15 text-orange-600 border border-orange-500/30
+           dark:bg-orange-500/10 dark:text-orange-400 dark:border-orange-500/20;
   }
   .badge-medium {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400;
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium
+           bg-yellow-500/15 text-yellow-700 border border-yellow-500/30
+           dark:bg-yellow-500/10 dark:text-yellow-400 dark:border-yellow-500/20;
   }
   .badge-low {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400;
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium
+           bg-green-500/15 text-green-700 border border-green-500/30
+           dark:bg-green-500/10 dark:text-green-400 dark:border-green-500/20;
   }
   .badge-info {
-    @apply inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400;
+    @apply inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-mono font-medium
+           bg-blue-500/15 text-blue-700 border border-blue-500/30
+           dark:bg-blue-500/10 dark:text-blue-400 dark:border-blue-500/20;
   }
+
+  /* Surface card */
+  .card {
+    background-color: var(--surface);
+    border: 1px solid var(--border);
+    @apply rounded-lg;
+  }
+
+  /* Terminal input */
+  .input-term {
+    background-color: var(--canvas);
+    border: 1px solid var(--border);
+    color: var(--text);
+    @apply rounded px-3 py-2 text-sm font-mono w-full
+           focus:outline-none focus:ring-1 transition-colors;
+    --tw-ring-color: var(--accent);
+  }
+  .input-term::placeholder {
+    color: var(--text-secondary);
+  }
+
+  /* Button variants */
+  .btn-primary {
+    background-color: var(--accent);
+    @apply text-white font-mono text-sm px-4 py-2 rounded
+           hover:opacity-90 disabled:opacity-40 transition-opacity font-medium;
+  }
+  .btn-ghost {
+    @apply font-mono text-sm px-3 py-2 rounded border transition-colors
+           hover:bg-white/5 disabled:opacity-40;
+    border-color: var(--border);
+    color: var(--text-secondary);
+  }
+  .btn-danger {
+    @apply font-mono text-sm px-3 py-2 rounded border transition-colors
+           border-red-500/30 text-red-600 dark:text-red-400
+           hover:bg-red-500/10 disabled:opacity-40;
+  }
+
+  /* Pipeline node states */
+  .pipeline-node-pending {
+    @apply border-2 border-dashed opacity-40;
+    border-color: var(--border);
+  }
+  .pipeline-node-running {
+    @apply border-2 border-dashed border-yellow-400 dark:border-yellow-500
+           shadow-[0_0_12px_rgba(234,179,8,0.3)];
+    animation: borderPulse 1.5s ease-in-out infinite;
+  }
+  .pipeline-node-done {
+    @apply border-2 border-green-500 dark:border-green-400
+           shadow-[0_0_8px_rgba(34,197,94,0.2)];
+  }
+  .pipeline-node-failed {
+    @apply border-2 border-red-500 dark:border-red-400
+           shadow-[0_0_8px_rgba(239,68,68,0.2)];
+  }
+
+  /* Section heading with terminal ">" prefix */
+  .term-heading {
+    @apply font-mono font-semibold flex items-center gap-2;
+    color: var(--text);
+  }
+  .term-heading::before {
+    content: '>';
+    color: var(--accent);
+  }
+}
+
+@keyframes borderPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+@layer utilities {
+  .text-term { color: var(--text); }
+  .text-term-secondary { color: var(--text-secondary); }
+  .text-accent { color: var(--accent); }
+  .bg-accent { background-color: var(--accent); }
+  .bg-surface { background-color: var(--surface); }
+  .bg-canvas { background-color: var(--canvas); }
+  .border-term { border-color: var(--border); }
 }

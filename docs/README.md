@@ -65,9 +65,12 @@ AI DevOps Automation Platform 전체 설계 문서.
 
 | 문서 | 내용 |
 |------|------|
+| [deploy-runbook](./runbooks/deploy-runbook.md) | 전체 인프라 배포 절차 (Phase A~L) |
 | [dr-failover](./runbooks/dr-failover.md) | 리전 장애 시 Tokyo Failover 절차 |
 | [incident-response](./runbooks/incident-response.md) | Incident 대응 절차 |
 | [rollback](./runbooks/rollback.md) | Lambda / Agent 롤백 절차 |
+| [cost-reduction-terraform](./runbooks/cost-reduction-terraform.md) | 고비용 리소스(AOSS/VPC Endpoint) 비활성화 및 복구 절차 |
+| [slack-app-setup](./runbooks/slack-app-setup.md) | Slack App 생성, OAuth 설정, Client Secret 주입 절차 |
 
 ---
 

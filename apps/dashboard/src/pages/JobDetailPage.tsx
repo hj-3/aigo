@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useParams, Link } from '@tanstack/react-router';
 import { api } from '@/lib/api-client';
 import { formatDate, riskLevelBadge } from '@/lib/utils';
+import { AgentPipeline, buildPipelineNodes } from '@/components/AgentPipeline';
 
 interface JobDetail {
   readonly jobId: string;
@@ -35,23 +36,12 @@ interface AgentRun {
   readonly errorMessage?: string;
 }
 
-function jobStatusClass(status: string): string {
-  switch (status) {
-    case 'COMPLETED': return 'badge-low';
-    case 'FAILED':    return 'badge-critical';
-    case 'RUNNING':   return 'badge-medium';
-    default:          return 'badge-info';
-  }
-}
-
-function agentStatusClass(status: string): string {
-  switch (status) {
-    case 'COMPLETED': return 'text-green-600 dark:text-green-400';
-    case 'FAILED':    return 'text-red-600 dark:text-red-400';
-    case 'RUNNING':   return 'text-yellow-600 dark:text-yellow-400';
-    default:          return 'text-gray-500';
-  }
-}
+const STATUS_COLOR: Record<string, string> = {
+  COMPLETED: 'text-green-400',
+  FAILED: 'text-red-400',
+  RUNNING: 'text-yellow-400',
+  PENDING: 'text-term-secondary',
+};
 
 export function JobDetailPage() {
   const { jobId } = useParams({ from: '/protected/jobs/$jobId' });
@@ -59,134 +49,177 @@ export function JobDetailPage() {
   const { data: job, isLoading: jobLoading } = useQuery<JobDetail>({
     queryKey: ['job', jobId],
     queryFn: () => api.get<JobDetail>(`/jobs/${jobId}`),
+    refetchInterval: (q) => (q.state.data?.status === 'RUNNING' ? 3000 : false),
   });
 
-  const { data: agentRuns, isLoading: runsLoading } = useQuery<AgentRun[]>({
+  const { data: agentRuns = [], isLoading: runsLoading } = useQuery<AgentRun[]>({
     queryKey: ['agent-runs', jobId],
     queryFn: () => api.get<AgentRun[]>(`/jobs/agent-runs?jobId=${jobId}`),
     enabled: !!job,
+    refetchInterval: (q) => {
+      const data = q.state.data;
+      const hasRunning = Array.isArray(data) && data.some((r) => r.status === 'RUNNING');
+      return hasRunning || job?.status === 'RUNNING' ? 3000 : false;
+    },
   });
 
   if (jobLoading || !job) {
-    return <div className="text-center py-12 text-gray-500">로딩 중...</div>;
+    return (
+      <div className="flex items-center gap-2 font-mono text-xs text-term-secondary py-12">
+        <span className="animate-pulse text-yellow-400">⟳</span>
+        <span>$ loading job {jobId?.slice(0, 8)}...</span>
+      </div>
+    );
   }
 
+  const pipelineNodes = buildPipelineNodes(agentRuns, job.status);
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-6 max-w-4xl">
+      {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">작업 상세</h1>
-          <p className="text-gray-500 text-sm mt-1 font-mono">{job.jobId}</p>
+          <h1 className="font-mono text-base font-bold text-term flex items-center gap-2">
+            <span className="text-accent">›</span> 작업 상세
+          </h1>
+          <p className="font-mono text-[10px] text-term-secondary mt-0.5">{job.jobId}</p>
         </div>
-        <span className={riskLevelBadge(jobStatusClass(job.status))}>{job.status}</span>
+        <div className="flex items-center gap-2">
+          <span className={riskLevelBadge(
+            job.status === 'COMPLETED' ? 'LOW' :
+            job.status === 'FAILED' ? 'CRITICAL' :
+            job.status === 'RUNNING' ? 'MEDIUM' : 'INFO'
+          )}>{job.status}</span>
+          {job.status === 'RUNNING' && (
+            <span className="font-mono text-[10px] text-yellow-400 animate-pulse">실행 중...</span>
+          )}
+        </div>
+      </div>
+
+      {/* Agent Pipeline Visualization */}
+      <div className="card p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5">
+            <span className="text-accent">›</span> 에이전트 파이프라인
+          </h2>
+          {runsLoading && (
+            <span className="font-mono text-[10px] text-term-secondary animate-pulse">로딩 중...</span>
+          )}
+        </div>
+        <AgentPipeline nodes={pipelineNodes} />
       </div>
 
       {/* Job metadata */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <h2 className="font-semibold text-gray-900 dark:text-white mb-4">작업 정보</h2>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-gray-500">타입</p>
-            <p className="font-medium mt-1">{job.type}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">리포지토리</p>
-            <p className="font-medium mt-1">{job.repoId}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">재시도</p>
-            <p className="font-medium mt-1">{job.retryCount}</p>
-          </div>
-          <div>
-            <p className="text-gray-500">생성</p>
-            <p className="font-medium mt-1">{formatDate(job.createdAt)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* PR context */}
-      {job.prContext && (
-        <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-          <h2 className="font-semibold text-gray-900 dark:text-white mb-4">PR 정보</h2>
-          <div className="space-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-gray-500 w-24">제목</span>
-              <a
-                href={job.prContext.prUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
-              >
-                #{job.prContext.prNumber} {job.prContext.prTitle}
-              </a>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-500 w-24">브랜치</span>
-              <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded">
-                {job.prContext.headBranch} → {job.prContext.baseBranch}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-500 w-24">커밋</span>
-              <span className="font-mono text-xs">{job.prContext.commitSha.slice(0, 8)}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-gray-500 w-24">작성자</span>
-              <span>{job.prContext.authorLogin}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Agent runs timeline */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6">
-        <h2 className="font-semibold text-gray-900 dark:text-white mb-4">
-          에이전트 실행 기록
-          {runsLoading && <span className="text-sm font-normal text-gray-400 ml-2">로딩 중...</span>}
+      <div className="card p-5">
+        <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5 mb-4">
+          <span className="text-accent">›</span> 작업 정보
         </h2>
-
-        {(agentRuns ?? []).length === 0 && !runsLoading && (
-          <p className="text-sm text-gray-500">에이전트 실행 기록이 없습니다.</p>
-        )}
-
-        <div className="space-y-3">
-          {(agentRuns ?? []).map((run) => (
-            <div
-              key={run.runId}
-              className="flex items-start gap-4 p-4 rounded-lg bg-gray-50 dark:bg-gray-800/50"
-            >
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-gray-900 dark:text-white">
-                    {run.agentType}
-                  </span>
-                  <span className={`text-xs font-medium ${agentStatusClass(run.status)}`}>
-                    {run.status}
-                  </span>
-                </div>
-                {run.errorMessage && (
-                  <p className="mt-1 text-xs text-red-600 dark:text-red-400 font-mono truncate">
-                    {run.errorMessage}
-                  </p>
-                )}
-                <div className="mt-1 flex gap-4 text-xs text-gray-500">
-                  <span>시작: {formatDate(run.startedAt)}</span>
-                  {run.completedAt && <span>완료: {formatDate(run.completedAt)}</span>}
-                  {run.durationMs && <span>소요: {(run.durationMs / 1000).toFixed(1)}s</span>}
-                  {run.inputTokens && <span>입력 토큰: {run.inputTokens.toLocaleString()}</span>}
-                  {run.outputTokens && <span>출력 토큰: {run.outputTokens.toLocaleString()}</span>}
-                </div>
-              </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-3 font-mono text-xs">
+          {[
+            { k: 'TYPE', v: job.type },
+            { k: 'REPO', v: job.repoId },
+            { k: 'RETRIES', v: String(job.retryCount) },
+            { k: 'CREATED', v: formatDate(job.createdAt) },
+          ].map(({ k, v }) => (
+            <div key={k}>
+              <p className="text-[10px] text-term-secondary uppercase tracking-wider">{k}</p>
+              <p className="text-term mt-0.5 truncate">{v}</p>
             </div>
           ))}
         </div>
       </div>
 
-      <div>
-        <Link to="/" className="text-sm text-brand-600 hover:text-brand-700 dark:text-brand-400">
-          ← 대시보드로 돌아가기
-        </Link>
+      {/* PR context */}
+      {job.prContext && (
+        <div className="card p-5">
+          <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5 mb-4">
+            <span className="text-accent">›</span> Pull Request
+          </h2>
+          <div className="space-y-2.5 font-mono text-xs">
+            <div className="flex items-baseline gap-3">
+              <span className="text-[10px] text-term-secondary w-16">TITLE</span>
+              <a
+                href={job.prContext.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-accent hover:underline"
+              >
+                #{job.prContext.prNumber} {job.prContext.prTitle}
+              </a>
+            </div>
+            <div className="flex items-baseline gap-3">
+              <span className="text-[10px] text-term-secondary w-16">BRANCH</span>
+              <code className="text-xs bg-canvas px-1.5 py-0.5 rounded border border-term text-term">
+                {job.prContext.headBranch} → {job.prContext.baseBranch}
+              </code>
+            </div>
+            <div className="flex items-baseline gap-3">
+              <span className="text-[10px] text-term-secondary w-16">COMMIT</span>
+              <code className="text-xs text-term-secondary">{job.prContext.commitSha.slice(0, 8)}</code>
+            </div>
+            <div className="flex items-baseline gap-3">
+              <span className="text-[10px] text-term-secondary w-16">AUTHOR</span>
+              <span className="text-term">@{job.prContext.authorLogin}</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Agent run log */}
+      <div className="card">
+        <div className="px-5 py-3 border-b border-term flex items-center justify-between">
+          <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5">
+            <span className="text-accent">›</span> 에이전트 실행 로그
+          </h2>
+          <span className="font-mono text-[10px] text-term-secondary">{agentRuns.length} runs</span>
+        </div>
+
+        {agentRuns.length === 0 && !runsLoading ? (
+          <p className="font-mono text-xs text-term-secondary px-5 py-8 text-center">
+            에이전트 실행 기록이 없습니다.
+          </p>
+        ) : (
+          <div className="divide-y divide-[var(--border)] font-mono text-xs">
+            {agentRuns.map((run, i) => (
+              <div key={run.runId} className="px-5 py-3 hover:bg-[var(--accent)]/3 transition-colors">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-term-secondary/40">{String(i + 1).padStart(2, '0')}</span>
+                      <span className="text-term font-medium">{run.agentType}</span>
+                      <span className={STATUS_COLOR[run.status] ?? 'text-term-secondary'}>
+                        {run.status}
+                      </span>
+                    </div>
+                    {run.errorMessage && (
+                      <p className="mt-1 text-red-400 text-[11px] font-mono truncate pl-6">
+                        ✗ {run.errorMessage}
+                      </p>
+                    )}
+                    <div className="mt-1 flex flex-wrap gap-3 text-[10px] text-term-secondary pl-6">
+                      <span>started {formatDate(run.startedAt)}</span>
+                      {run.completedAt && <span>done {formatDate(run.completedAt)}</span>}
+                      {run.durationMs != null && (
+                        <span className="text-green-400/70">{(run.durationMs / 1000).toFixed(2)}s</span>
+                      )}
+                      {run.inputTokens != null && (
+                        <span>↑{run.inputTokens.toLocaleString()} tok</span>
+                      )}
+                      {run.outputTokens != null && (
+                        <span>↓{run.outputTokens.toLocaleString()} tok</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
+
+      <Link to="/" className="inline-block font-mono text-xs text-accent hover:underline">
+        ← 대시보드로 돌아가기
+      </Link>
     </div>
   );
 }

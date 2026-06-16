@@ -20,47 +20,68 @@ export function IncidentsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">인시던트</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-mono text-base font-bold text-term flex items-center gap-2">
+            <span className="text-accent">›</span> 인시던트
+          </h1>
+          <p className="font-mono text-[10px] text-term-secondary mt-0.5">$ incidents list --status=open</p>
+        </div>
+        {!isLoading && (
+          <span className="font-mono text-[10px] text-term-secondary">{incidents?.length ?? 0} incidents</span>
+        )}
+      </div>
 
-      {isLoading && <div className="text-center py-12 text-gray-500">로딩 중...</div>}
+      {isLoading && (
+        <div className="flex items-center gap-2 font-mono text-xs text-term-secondary py-8">
+          <span className="animate-pulse text-yellow-400">⟳</span>
+          <span>$ fetching incidents...</span>
+        </div>
+      )}
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">제목</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">심각도</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">상태</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">서비스</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">발생 시간</th>
+            <tr className="border-b border-term bg-canvas/50">
+              {['TITLE', 'SEVERITY', 'STATUS', 'SERVICE', 'CREATED'].map((h) => (
+                <th key={h} className="text-left font-mono text-[10px] text-term-secondary uppercase tracking-wider px-4 py-2.5">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+          <tbody className="divide-y divide-[var(--border)]">
             {(incidents ?? []).map((incident) => (
-              <tr key={incident.incidentId} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                <td className="px-6 py-4">
+              <tr key={incident.incidentId} className="hover:bg-[var(--accent)]/3 transition-colors font-mono text-xs">
+                <td className="px-4 py-3">
                   <Link
                     to="/incidents/$incidentId"
                     params={{ incidentId: incident.incidentId }}
-                    className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                    className="text-accent hover:underline font-medium"
                   >
                     {incident.title}
                   </Link>
                 </td>
-                <td className="px-6 py-4"><span className={riskLevelBadge(incident.severity)}>{incident.severity}</span></td>
-                <td className="px-6 py-4"><span className={riskLevelBadge(
-                  incident.status === 'RESOLVED' ? 'LOW'
-                  : incident.status === 'OPEN' ? 'CRITICAL'
-                  : 'MEDIUM'
-                )}>{incident.status}</span></td>
-                <td className="px-6 py-4 text-sm text-gray-700 dark:text-gray-300">{incident.serviceId}</td>
-                <td className="px-6 py-4 text-sm text-gray-500">{formatDate(incident.createdAt)}</td>
+                <td className="px-4 py-3">
+                  <span className={riskLevelBadge(incident.severity)}>{incident.severity}</span>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={riskLevelBadge(
+                    incident.status === 'RESOLVED' ? 'LOW' :
+                    incident.status === 'OPEN' ? 'CRITICAL' : 'MEDIUM'
+                  )}>{incident.status}</span>
+                </td>
+                <td className="px-4 py-3 text-term-secondary">{incident.serviceId}</td>
+                <td className="px-4 py-3 text-term-secondary">{formatDate(incident.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {(incidents ?? []).length === 0 && !isLoading && (
-          <p className="text-center py-12 text-gray-500">활성 인시던트가 없습니다.</p>
+          <div className="py-12 text-center font-mono text-xs text-term-secondary">
+            <p className="text-2xl mb-2 text-green-400/40">✓</p>
+            활성 인시던트가 없습니다.
+          </div>
         )}
       </div>
     </div>

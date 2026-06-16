@@ -1,6 +1,19 @@
 import { createRouter, createRootRoute, createRoute, Outlet, redirect } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/router-devtools';
 import { getCurrentUser, fetchAuthSession } from 'aws-amplify/auth';
+
+// Retry wrapper: Amplify token storage occasionally lags behind the signedIn
+// Hub event by a tick or two. Three attempts with 400 ms gaps are enough.
+async function getUser() {
+  for (let i = 0; i < 5; i++) {
+    try {
+      return await getCurrentUser();
+    } catch {
+      if (i < 4) await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+  throw new Error('unauthenticated');
+}
 import { Layout } from './components/layout/Layout';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
@@ -57,18 +70,32 @@ const protectedRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: 'protected',
   beforeLoad: async ({ location }) => {
+    // Step 1 — verify the user is authenticated (retries handle post-OAuth timing)
+    let authenticated = false;
     try {
-      const user = await getCurrentUser();
-      // Check onboardingCompleted attribute from JWT claims
-      const session = await fetchAuthSession();
-      const claims = session.tokens?.idToken?.payload as Record<string, unknown> | undefined;
-      const onboarded = claims?.['custom:onboardingCompleted'];
-      if (onboarded !== 'true' && location.pathname !== '/onboarding') {
-        throw redirect({ to: '/onboarding' });
-      }
-    } catch (err) {
-      if ((err as { routerCode?: string }).routerCode === 'REDIRECT') throw err;
+      await getUser();
+      authenticated = true;
+    } catch {
       throw redirect({ to: '/login', search: { from: location.href } });
+    }
+
+    // Step 2 — if authenticated, check onboarding (soft: errors default to /onboarding)
+    // Never send an authenticated user back to /login from here.
+    if (authenticated) {
+      try {
+        const session = await fetchAuthSession({ forceRefresh: false });
+        const claims = session.tokens?.idToken?.payload as Record<string, unknown> | undefined;
+        const onboarded = claims?.['custom:onboardingCompleted'];
+        if (onboarded !== 'true' && location.pathname !== '/onboarding') {
+          throw redirect({ to: '/onboarding' });
+        }
+      } catch (err) {
+        if ((err as { routerCode?: string }).routerCode === 'REDIRECT') throw err;
+        // fetchAuthSession failed but user IS authenticated — go to onboarding, not login
+        if (location.pathname !== '/onboarding') {
+          throw redirect({ to: '/onboarding' });
+        }
+      }
     }
   },
   component: () => (

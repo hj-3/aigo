@@ -68,7 +68,7 @@ export function SettingsPage() {
   });
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-500">로딩 중...</div>;
+    return <div className="text-center py-12 text-term-secondary">로딩 중...</div>;
   }
 
   const effective = { ...settings, ...draft } as OrgSettings & Partial<SettingsDraft>;
@@ -82,14 +82,14 @@ export function SettingsPage() {
     <div className="space-y-8">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">설정</h1>
-          <p className="text-sm text-gray-500 mt-1">조직 설정 및 알림 구성</p>
+          <h1 className="text-2xl font-bold text-term">설정</h1>
+          <p className="text-sm text-term-secondary mt-1">조직 설정 및 알림 구성</p>
         </div>
         {hasAdminRole && (
           <button
             disabled={!isDirty || mutation.isPending}
             onClick={() => mutation.mutate(draft)}
-            className="px-4 py-2 bg-brand-600 text-white rounded-lg text-sm font-medium disabled:opacity-40 hover:bg-brand-700 transition-colors"
+            className="btn-primary"
           >
             {mutation.isPending ? '저장 중...' : '변경 사항 저장'}
           </button>
@@ -97,59 +97,59 @@ export function SettingsPage() {
       </div>
 
       {saveError && (
-        <div className="rounded-md bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+        <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-4 text-sm text-red-400">
           {saveError}
         </div>
       )}
 
       {mutation.isSuccess && !isDirty && (
-        <div className="rounded-md bg-green-50 border border-green-200 p-4 text-sm text-green-700">
+        <div className="rounded-lg bg-green-500/10 border border-green-500/30 p-4 text-sm text-green-500">
           설정이 저장되었습니다.
         </div>
       )}
 
       {/* Analysis Settings */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-6">
-        <h2 className="font-semibold text-gray-900 dark:text-white">분석 설정</h2>
+      <div className="card p-6 space-y-6">
+        <h2 className="font-semibold text-term">분석 설정</h2>
 
         <label className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">PR 자동 분석</p>
-            <p className="text-xs text-gray-500 mt-0.5">새 PR이 열릴 때 자동으로 분석을 시작합니다</p>
+            <p className="text-sm font-medium text-term">PR 자동 분석</p>
+            <p className="text-xs text-term-secondary mt-0.5">새 PR이 열릴 때 자동으로 분석을 시작합니다</p>
           </div>
           <input
             type="checkbox"
             disabled={!hasAdminRole}
             checked={effective.autoAnalyzeOnPR ?? false}
             onChange={(e) => field('autoAnalyzeOnPR', e.target.checked)}
-            className="w-5 h-5 rounded accent-brand-600 disabled:opacity-40"
+            className="w-5 h-5 rounded accent-accent disabled:opacity-40"
           />
         </label>
 
         <label className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-gray-900 dark:text-white">승인 필수</p>
-            <p className="text-xs text-gray-500 mt-0.5">높은 리스크 항목에 대해 사람의 승인이 필요합니다</p>
+            <p className="text-sm font-medium text-term">승인 필수</p>
+            <p className="text-xs text-term-secondary mt-0.5">높은 리스크 항목에 대해 사람의 승인이 필요합니다</p>
           </div>
           <input
             type="checkbox"
             disabled={!hasAdminRole}
             checked={effective.approvalRequired ?? false}
             onChange={(e) => field('approvalRequired', e.target.checked)}
-            className="w-5 h-5 rounded accent-brand-600 disabled:opacity-40"
+            className="w-5 h-5 rounded accent-accent disabled:opacity-40"
           />
         </label>
 
         <div>
-          <label className="block text-sm font-medium text-gray-900 dark:text-white mb-1">
+          <label className="block text-sm font-medium text-term mb-1">
             리스크 임계값
           </label>
-          <p className="text-xs text-gray-500 mb-2">이 수준 이상의 리스크는 승인 요청을 트리거합니다</p>
+          <p className="text-xs text-term-secondary mb-2">이 수준 이상의 리스크는 승인 요청을 트리거합니다</p>
           <select
             disabled={!hasAdminRole}
             value={effective.riskThreshold ?? 'HIGH'}
             onChange={(e) => field('riskThreshold', e.target.value)}
-            className="w-48 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm px-3 py-2 disabled:opacity-40"
+            className="w-48 input-term disabled:opacity-40"
           >
             <option value="CRITICAL">CRITICAL만</option>
             <option value="HIGH">HIGH 이상</option>
@@ -159,11 +159,11 @@ export function SettingsPage() {
       </div>
 
       {/* Notification Settings */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-6">
-        <h2 className="font-semibold text-gray-900 dark:text-white">알림 설정</h2>
+      <div className="card p-6 space-y-6">
+        <h2 className="font-semibold text-term">알림 설정</h2>
 
         <div>
-          <label className="block text-sm font-medium text-gray-900 dark:text-white mb-1">
+          <label className="block text-sm font-medium text-term mb-1">
             Slack 기본 채널
           </label>
           <input
@@ -172,24 +172,24 @@ export function SettingsPage() {
             placeholder="#agentops-alerts"
             value={effective.slackChannel ?? ''}
             onChange={(e) => field('slackChannel', e.target.value)}
-            className="w-72 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm px-3 py-2 disabled:opacity-40"
+            className="w-72 input-term disabled:opacity-40"
           />
         </div>
       </div>
 
       {/* General Settings */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-6">
-        <h2 className="font-semibold text-gray-900 dark:text-white">일반 설정</h2>
+      <div className="card p-6 space-y-6">
+        <h2 className="font-semibold text-term">일반 설정</h2>
 
         <div>
-          <label className="block text-sm font-medium text-gray-900 dark:text-white mb-1">
+          <label className="block text-sm font-medium text-term mb-1">
             시간대
           </label>
           <select
             disabled={!hasAdminRole}
             value={effective.timezone ?? 'Asia/Seoul'}
             onChange={(e) => field('timezone', e.target.value)}
-            className="w-72 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm px-3 py-2 disabled:opacity-40"
+            className="w-72 input-term disabled:opacity-40"
           >
             <option value="Asia/Seoul">Asia/Seoul (KST)</option>
             <option value="UTC">UTC</option>
@@ -199,7 +199,7 @@ export function SettingsPage() {
         </div>
 
         {settings?.updatedAt && (
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-term-secondary">
             마지막 업데이트:{' '}
             {new Intl.DateTimeFormat('ko-KR', {
               dateStyle: 'medium',
@@ -210,30 +210,30 @@ export function SettingsPage() {
       </div>
 
       {/* Integrations Section */}
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 p-6 space-y-5">
-        <h2 className="font-semibold text-gray-900 dark:text-white">연동</h2>
+      <div className="card p-6 space-y-5">
+        <h2 className="font-semibold text-term">연동</h2>
 
         {/* GitHub */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-4 rounded-lg border">
           <div className="flex items-center gap-3">
-            <Github className="w-6 h-6 text-gray-700" />
+            <Github className="w-6 h-6 text-term" />
             <div>
-              <p className="text-sm font-medium text-gray-900">GitHub</p>
+              <p className="text-sm font-medium text-term">GitHub</p>
               {integrations?.github?.connected
-                ? <p className="text-xs text-gray-500 mt-0.5">@{integrations.github.accountLogin} 연결됨</p>
-                : <p className="text-xs text-gray-500 mt-0.5">GitHub App이 연결되지 않았습니다</p>}
+                ? <p className="text-xs text-term-secondary mt-0.5">@{integrations.github.accountLogin} 연결됨</p>
+                : <p className="text-xs text-term-secondary mt-0.5">GitHub App이 연결되지 않았습니다</p>}
             </div>
           </div>
           <div className="flex items-center gap-3">
             {integrations?.github?.connected
               ? <CheckCircle className="w-5 h-5 text-green-500" />
-              : <XCircle className="w-5 h-5 text-gray-300" />}
+              : <XCircle className="w-5 h-5 text-term-secondary opacity-30" />}
             {!integrations?.github?.connected && integrations?.github?.installUrl && (
               <a
                 href={integrations.github.installUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+                className="btn-ghost text-xs py-1.5 px-3"
               >
                 App 설치
               </a>
@@ -242,32 +242,34 @@ export function SettingsPage() {
         </div>
 
         {/* Slack */}
-        <div className="flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+        <div className="flex items-center justify-between p-4 rounded-lg border">
           <div className="flex items-center gap-3">
-            <Slack className="w-6 h-6 text-purple-600" />
+            <Slack className="w-6 h-6 text-purple-500" />
             <div>
-              <p className="text-sm font-medium text-gray-900">Slack</p>
+              <p className="text-sm font-medium text-term">Slack</p>
               {integrations?.slack?.connected
-                ? <p className="text-xs text-gray-500 mt-0.5">{integrations.slack.teamName} 연결됨</p>
-                : <p className="text-xs text-gray-500 mt-0.5">Slack 워크스페이스가 연결되지 않았습니다</p>}
+                ? <p className="text-xs text-term-secondary mt-0.5">{integrations.slack.teamName} 연결됨</p>
+                : <p className="text-xs text-term-secondary mt-0.5">Slack 워크스페이스가 연결되지 않았습니다</p>}
             </div>
           </div>
           <div className="flex items-center gap-3">
             {integrations?.slack?.connected
               ? <CheckCircle className="w-5 h-5 text-green-500" />
-              : <XCircle className="w-5 h-5 text-gray-300" />}
+              : <XCircle className="w-5 h-5 text-term-secondary opacity-30" />}
             {integrations?.slack?.connected ? (
               <button
                 onClick={() => disconnectSlackMutation.mutate()}
                 disabled={disconnectSlackMutation.isPending}
-                className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                className="btn-danger py-1.5 px-3 text-xs"
               >
                 연결 해제
               </button>
             ) : integrations?.slack?.connectUrl ? (
               <a
                 href={integrations.slack.connectUrl}
-                className="rounded-lg bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="rounded bg-purple-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-purple-700 transition-colors"
               >
                 Slack 연결
               </a>
@@ -277,7 +279,7 @@ export function SettingsPage() {
       </div>
 
       {!hasAdminRole && (
-        <p className="text-sm text-gray-400 text-center">
+        <p className="text-sm text-term-secondary text-center">
           설정을 변경하려면 관리자 이상의 권한이 필요합니다.
         </p>
       )}

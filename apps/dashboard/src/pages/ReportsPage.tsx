@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { api } from '@/lib/api-client';
-import { formatDate, riskLevelBadge } from '@/lib/utils';
+import { formatDate, riskLevelBadge, cn } from '@/lib/utils';
 
 interface Report {
   readonly reportId: string;
@@ -15,6 +15,32 @@ interface Report {
   readonly findingsBySeverity: Record<string, number>;
 }
 
+function RiskBar({ score, level }: { score: number; level: string }) {
+  const barColor =
+    level === 'CRITICAL' ? 'bg-red-500' :
+    level === 'HIGH'     ? 'bg-orange-500' :
+    level === 'MEDIUM'   ? 'bg-yellow-500' :
+                           'bg-green-500';
+  const textColor =
+    level === 'CRITICAL' ? 'text-red-400' :
+    level === 'HIGH'     ? 'text-orange-400' :
+    level === 'MEDIUM'   ? 'text-yellow-400' :
+                           'text-green-400';
+  return (
+    <div className="flex items-center gap-2 min-w-[120px]">
+      <div className="flex-1 h-1 bg-canvas rounded-full overflow-hidden">
+        <div
+          className={cn('h-full rounded-full transition-all duration-500', barColor)}
+          style={{ width: `${Math.min(score ?? 0, 100)}%` }}
+        />
+      </div>
+      <span className={cn('font-mono text-[10px] font-medium w-8 text-right', textColor)}>
+        {score ?? '—'}
+      </span>
+    </div>
+  );
+}
+
 export function ReportsPage() {
   const { data: reports, isLoading } = useQuery<Report[]>({
     queryKey: ['reports'],
@@ -23,66 +49,91 @@ export function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900 dark:text-white">분석 리포트</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="font-mono text-base font-bold text-term flex items-center gap-2">
+            <span className="text-accent">›</span> 분석 리포트
+          </h1>
+          <p className="font-mono text-[10px] text-term-secondary mt-0.5">$ reports list --org=prod</p>
+        </div>
+        {!isLoading && (
+          <span className="font-mono text-[10px] text-term-secondary">{reports?.length ?? 0} reports</span>
+        )}
+      </div>
 
-      {isLoading && <div className="text-center py-12 text-gray-500">로딩 중...</div>}
+      {isLoading && (
+        <div className="flex items-center gap-2 font-mono text-xs text-term-secondary py-8">
+          <span className="animate-pulse text-yellow-400">⟳</span>
+          <span>$ fetching reports...</span>
+        </div>
+      )}
 
-      <div className="bg-white dark:bg-gray-900 rounded-xl border border-gray-200 dark:border-gray-800 overflow-hidden">
+      <div className="card overflow-hidden">
         <table className="w-full">
           <thead>
-            <tr className="border-b border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-800/50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">리포지토리</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">리스크</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">권고사항</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">승인 상태</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">Critical/High</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wider px-6 py-3">생성 시간</th>
+            <tr className="border-b border-term bg-canvas/50">
+              {['REPOSITORY', 'RISK SCORE', 'LEVEL', 'RECOMMENDATION', 'STATUS', 'C / H', 'CREATED'].map((h) => (
+                <th key={h} className="text-left font-mono text-[10px] text-term-secondary uppercase tracking-wider px-4 py-2.5">
+                  {h}
+                </th>
+              ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+          <tbody className="divide-y divide-[var(--border)]">
             {(reports ?? []).map((report) => (
-              <tr key={report.reportId} className="hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
-                <td className="px-6 py-4">
+              <tr
+                key={report.reportId}
+                className="hover:bg-[var(--accent)]/3 transition-colors font-mono text-xs"
+              >
+                <td className="px-4 py-3">
                   <Link
                     to="/reports/$reportId"
                     params={{ reportId: report.reportId }}
-                    className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                    className="text-accent hover:underline font-medium"
                   >
                     {report.repoId}
                   </Link>
                 </td>
-                <td className="px-6 py-4">
-                  <span className={riskLevelBadge(report.riskLevel)}>
-                    {report.riskLevel}
-                    {report.riskScore !== undefined && (
-                      <span className="ml-1 font-mono text-xs opacity-80">({report.riskScore})</span>
-                    )}
-                  </span>
+
+                {/* Risk score bar */}
+                <td className="px-4 py-3">
+                  <RiskBar score={report.riskScore} level={report.riskLevel} />
                 </td>
-                <td className="px-6 py-4">
+
+                <td className="px-4 py-3">
+                  <span className={riskLevelBadge(report.riskLevel)}>{report.riskLevel}</span>
+                </td>
+
+                <td className="px-4 py-3">
                   <span className={riskLevelBadge(
-                    report.mergeRecommendation === 'APPROVE' ? 'LOW'
-                    : report.mergeRecommendation === 'BLOCK' ? 'CRITICAL'
-                    : 'MEDIUM'
+                    report.mergeRecommendation === 'APPROVE' ? 'LOW' :
+                    report.mergeRecommendation === 'BLOCK'   ? 'CRITICAL' : 'MEDIUM'
                   )}>{report.mergeRecommendation}</span>
                 </td>
-                <td className="px-6 py-4">
+
+                <td className="px-4 py-3">
                   <span className={riskLevelBadge(
-                    report.approvalStatus === 'APPROVED' ? 'LOW'
-                    : report.approvalStatus === 'REJECTED' ? 'CRITICAL'
-                    : 'MEDIUM'
+                    report.approvalStatus === 'APPROVED' ? 'LOW' :
+                    report.approvalStatus === 'REJECTED' ? 'CRITICAL' : 'MEDIUM'
                   )}>{report.approvalStatus}</span>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                  {(report.findingsBySeverity['CRITICAL'] ?? 0) + (report.findingsBySeverity['HIGH'] ?? 0)}
+
+                <td className="px-4 py-3 text-term">
+                  <span className="text-red-400">{report.findingsBySeverity['CRITICAL'] ?? 0}</span>
+                  <span className="text-term-secondary mx-1">/</span>
+                  <span className="text-orange-400">{report.findingsBySeverity['HIGH'] ?? 0}</span>
                 </td>
-                <td className="px-6 py-4 text-sm text-gray-500">{formatDate(report.createdAt)}</td>
+
+                <td className="px-4 py-3 text-term-secondary">{formatDate(report.createdAt)}</td>
               </tr>
             ))}
           </tbody>
         </table>
         {(reports ?? []).length === 0 && !isLoading && (
-          <p className="text-center py-12 text-gray-500">리포트가 없습니다.</p>
+          <div className="py-12 text-center font-mono text-xs text-term-secondary">
+            <p className="text-2xl mb-2 opacity-20">○</p>
+            리포트가 없습니다.
+          </div>
         )}
       </div>
     </div>
