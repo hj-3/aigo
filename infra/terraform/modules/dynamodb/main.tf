@@ -29,6 +29,22 @@ resource "aws_dynamodb_table" "organizations" {
     name = "SK"
     type = "S"
   }
+  attribute {
+    name = "GSI1PK"
+    type = "S"
+  }
+  attribute {
+    name = "GSI1SK"
+    type = "S"
+  }
+
+  # GSI1: lookup org by GitHub account login (GSI1PK = GITHUB_LOGIN#{githubLogin})
+  global_secondary_index {
+    name            = "GSI1-orgId-provider-index"
+    hash_key        = "GSI1PK"
+    range_key       = "GSI1SK"
+    projection_type = "ALL"
+  }
 
   point_in_time_recovery { enabled = true }
   deletion_protection_enabled = true

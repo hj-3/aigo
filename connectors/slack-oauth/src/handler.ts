@@ -44,7 +44,7 @@ export async function handleSlackOAuth(
 
   if (oauthError) {
     logger.warn('Slack OAuth denied by user', { error: oauthError });
-    return redirect(`${dashboardUrl}/onboarding?slack_error=${oauthError}`);
+    return redirect(`${dashboardUrl}/settings?slack_error=${oauthError}`);
   }
 
   if (!code || !state) {
@@ -82,12 +82,12 @@ export async function handleSlackOAuth(
     slackData = (await response.json()) as SlackOAuthResponse;
   } catch (err) {
     logger.error('Failed to exchange Slack OAuth code', { error: String(err) });
-    return redirect(`${dashboardUrl}/onboarding?slack_error=token_exchange_failed`);
+    return redirect(`${dashboardUrl}/settings?slack_error=token_exchange_failed`);
   }
 
   if (!slackData.ok) {
     logger.warn('Slack OAuth token exchange failed', { error: slackData.error });
-    return redirect(`${dashboardUrl}/onboarding?slack_error=${slackData.error}`);
+    return redirect(`${dashboardUrl}/settings?slack_error=${slackData.error}`);
   }
 
   const { access_token, team, bot_user_id, incoming_webhook } = slackData;
@@ -163,7 +163,7 @@ export async function handleSlackOAuth(
 
   logger.info('Slack workspace connected', { orgId, slackTeamId: team.id, slackTeamName: team.name });
 
-  return redirect(`${dashboardUrl}/onboarding?slack_connected=true`);
+  return redirect(`${dashboardUrl}/settings?slack_connected=true`);
 }
 
 function redirect(url: string): APIGatewayProxyResultV2 {
