@@ -93,7 +93,6 @@ module "bedrock_agentcore" {
   aws_account_id        = local.account_id
   knowledge_base_arns   = []  # KB replaced by S3 Vector index — see docs/impl/kb-s3-vector.md
   s3_agent_packages_arn = module.s3.bucket_arns["agent_packages"]
-  kms_key_arn           = module.kms.lambda_key_arn
   foundation_model      = "anthropic.claude-3-5-sonnet-20240620-v1:0"
 
   agent_instructions = {
@@ -708,6 +707,7 @@ module "monitoring" {
     "${var.project}-notification-worker",
     "${var.project}-orchestrator",
     "${var.project}-post-confirmation",
+    "${var.project}-aws-event-connector",
   ]
 
   sqs_dlq_names = [

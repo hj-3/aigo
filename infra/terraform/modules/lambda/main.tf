@@ -64,24 +64,3 @@ resource "aws_lambda_alias" "live" {
     ignore_changes = [routing_config]
   }
 }
-
-# CloudWatch alarm triggers auto-rollback via CI/CD
-resource "aws_cloudwatch_metric_alarm" "error_rate" {
-  alarm_name          = "${local.fn_name}-error-rate"
-  comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 2
-  metric_name         = "Errors"
-  namespace           = "AWS/Lambda"
-  period              = 60
-  statistic           = "Sum"
-  threshold           = 5
-  alarm_description   = "Lambda error rate too high — triggers rollback"
-  treat_missing_data  = "notBreaching"
-
-  dimensions = {
-    FunctionName = local.fn_name
-    Resource     = "${local.fn_name}:live"
-  }
-
-  tags = local.common_tags
-}

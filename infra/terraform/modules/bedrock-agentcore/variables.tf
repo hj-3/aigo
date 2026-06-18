@@ -32,11 +32,6 @@ variable "agent_instructions" {
   type        = map(string)
 }
 
-variable "kms_key_arn" {
-  description = "KMS key ARN for SSM Parameter encryption"
-  type        = string
-}
-
 variable "tags" {
   type    = map(string)
   default = {}

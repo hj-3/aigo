@@ -134,7 +134,6 @@ resource "aws_ssm_parameter" "agent_id" {
   description = "Bedrock Agent ID for ${each.key}"
   type        = "String"
   value       = each.value.agent_id
-  key_id      = var.kms_key_arn
   tier        = "Standard"
 
   tags = local.common_tags
@@ -147,7 +146,6 @@ resource "aws_ssm_parameter" "agent_alias_id" {
   description = "Bedrock Agent Alias ID for ${each.key}"
   type        = "String"
   value       = each.value.agent_alias_id
-  key_id      = var.kms_key_arn
   tier        = "Standard"
 
   tags = local.common_tags
@@ -160,7 +158,6 @@ resource "aws_ssm_parameter" "agent_alias_arn" {
   description = "Bedrock Agent Alias ARN for ${each.key} (used by workers)"
   type        = "String"
   value       = each.value.agent_alias_arn
-  key_id      = var.kms_key_arn
   tier        = "Standard"
 
   tags = local.common_tags
