@@ -139,8 +139,8 @@ jobs:
           TF_VAR_domain_name: ${{ secrets.DOMAIN_NAME }}
           TF_VAR_github_org: ${{ secrets.GH_ORG }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
-          TF_VAR_github_app_id: ${{ secrets.GITHUB_APP_ID }}
-          TF_VAR_github_app_slug: ${{ secrets.GITHUB_APP_SLUG }}
+          TF_VAR_github_app_id: ${{ secrets.GH_APP_ID }}
+          TF_VAR_github_app_slug: ${{ secrets.GH_APP_SLUG }}
           TF_VAR_slack_client_id: ${{ secrets.SLACK_CLIENT_ID }}
           TF_VAR_slack_client_secret: ${{ secrets.SLACK_CLIENT_SECRET }}
           TF_VAR_route53_zone_id: ${{ secrets.ROUTE53_ZONE_ID }}
