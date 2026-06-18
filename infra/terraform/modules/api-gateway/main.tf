@@ -14,7 +14,7 @@ resource "aws_apigatewayv2_api" "main" {
 
   cors_configuration {
     allow_origins     = var.cors_allow_origins
-    allow_methods     = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_methods     = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     allow_headers     = ["Content-Type", "Authorization", "X-Amz-Date", "X-Api-Key", "X-Requested-With"]
     expose_headers    = ["X-Request-Id"]
     allow_credentials = true
@@ -94,8 +94,8 @@ resource "aws_apigatewayv2_route" "routes" {
   api_id             = aws_apigatewayv2_api.main.id
   route_key          = each.key
   target             = "integrations/${aws_apigatewayv2_integration.lambda[each.key].id}"
-  authorization_type = startswith(each.key, "POST /webhooks") || each.key == "GET /health" || startswith(each.key, "GET /auth/") ? "NONE" : "JWT"
-  authorizer_id      = startswith(each.key, "POST /webhooks") || each.key == "GET /health" || startswith(each.key, "GET /auth/") ? null : aws_apigatewayv2_authorizer.cognito.id
+  authorization_type = startswith(each.key, "POST /webhooks") || each.key == "GET /health" || startswith(each.key, "GET /auth/") || startswith(each.key, "GET /team/invite/") ? "NONE" : "JWT"
+  authorizer_id      = startswith(each.key, "POST /webhooks") || each.key == "GET /health" || startswith(each.key, "GET /auth/") || startswith(each.key, "GET /team/invite/") ? null : aws_apigatewayv2_authorizer.cognito.id
 }
 
 # Allow API Gateway to invoke each Lambda — keyed by route (static) to avoid

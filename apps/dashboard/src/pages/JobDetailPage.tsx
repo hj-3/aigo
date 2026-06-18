@@ -46,10 +46,13 @@ const STATUS_COLOR: Record<string, string> = {
 export function JobDetailPage() {
   const { jobId } = useParams({ from: '/protected/jobs/$jobId' });
 
+  const isActive = (status?: string) =>
+    status === 'RUNNING' || status === 'PENDING' || status === 'IN_PROGRESS';
+
   const { data: job, isLoading: jobLoading } = useQuery<JobDetail>({
     queryKey: ['job', jobId],
     queryFn: () => api.get<JobDetail>(`/jobs/${jobId}`),
-    refetchInterval: (q) => (q.state.data?.status === 'RUNNING' ? 3000 : false),
+    refetchInterval: (q) => (isActive(q.state.data?.status) ? 3000 : false),
   });
 
   const { data: agentRuns = [], isLoading: runsLoading } = useQuery<AgentRun[]>({
@@ -58,8 +61,8 @@ export function JobDetailPage() {
     enabled: !!job,
     refetchInterval: (q) => {
       const data = q.state.data;
-      const hasRunning = Array.isArray(data) && data.some((r) => r.status === 'RUNNING');
-      return hasRunning || job?.status === 'RUNNING' ? 3000 : false;
+      const hasActive = Array.isArray(data) && data.some((r) => isActive(r.status));
+      return hasActive || isActive(job?.status) ? 3000 : false;
     },
   });
 

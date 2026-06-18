@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
-import { ddbGet, ddbQuery, ddbUpdate, ddbPut, Config } from '@aigo/aws-clients';
+import { ddbGet, ddbQuery, ddbUpdate, ddbPut, sqsSendMessage, Config } from '@aigo/aws-clients';
 import { ulid } from 'ulid';
 import { requireAuth, requireRole, extractClaims } from '../middleware/auth.js';
+const SQS_NOTIFICATION_QUEUE_URL = process.env['SQS_NOTIFICATION_QUEUE_URL'] ?? '';
 
 export const reportsRouter = new Hono();
 
@@ -15,7 +16,8 @@ reportsRouter.get('/', async (c) => {
     TableName: Config.tableName('Reports'),
     IndexName: 'GSI3-orgApprovalStatus-createdAt-index',
     KeyConditionExpression: 'GSI3PK = :pk',
-    ExpressionAttributeValues: { ':pk': `ORG#${orgId}` },
+    FilterExpression: 'approvalStatus <> :deleted',
+    ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':deleted': 'DELETED' },
     ScanIndexForward: false,
     Limit: 50,
   });
@@ -37,12 +39,14 @@ reportsRouter.get('/:reportId', async (c) => {
     return c.json({ error: 'NOT_FOUND' }, 404);
   }
 
-  // Fetch findings for this report
+  // Findings are stored with GSI1PK = "JOB#{jobId}" (reportId doesn't exist yet at save_findings time).
+  // GSI name is GSI1-reportId-severity-index but the key prefix is JOB# not REPORT#.
+  const jobId = (report as Record<string, string>)['jobId'] ?? '';
   const { items: findings } = await ddbQuery({
     TableName: Config.tableName('Findings'),
     IndexName: 'GSI1-reportId-severity-index',
     KeyConditionExpression: 'GSI1PK = :pk',
-    ExpressionAttributeValues: { ':pk': `REPORT#${reportId}` },
+    ExpressionAttributeValues: { ':pk': `JOB#${jobId}` },
     ScanIndexForward: false,
   });
 
@@ -54,7 +58,7 @@ reportsRouter.get('/:reportId', async (c) => {
  * Records approval/rejection decision and updates AgentCore Memory so future analyses
  * can learn from human feedback.
  */
-reportsRouter.post('/:reportId/approve', requireRole('MEMBER'), async (c) => {
+reportsRouter.post('/:reportId/approve', requireRole('REVIEWER'), async (c) => {
   const claims = extractClaims(c)!;
   const orgId = claims['custom:orgId'];
   const userId = claims.sub;
@@ -110,12 +114,13 @@ reportsRouter.post('/:reportId/approve', requireRole('MEMBER'), async (c) => {
   });
 
   // ── 3. Update AgentMemory — write feedback so future analyses improve ──────
-  // Find the PR analysis memory entry for this report to add human approval signal
   const repoId = report['repoId'] as string;
-  const riskScore = report['riskScore'] as number ?? 0;
-  const riskLevel = report['riskLevel'] as string ?? '';
-  const prNumber = (report['prContext'] as Record<string, unknown>)?.['prNumber'] as number ?? 0;
-  const authorLogin = (report['prContext'] as Record<string, unknown>)?.['authorLogin'] as string ?? '';
+  const riskScore = (report['riskScore'] as number) ?? 0;
+  const riskLevel = (report['riskLevel'] as string) ?? '';
+  const prCtx = (report['prContext'] as Record<string, unknown>) ?? {};
+  const prNumber = (prCtx['prNumber'] as number) ?? 0;
+  const prUrl = (prCtx['prUrl'] as string) ?? '';
+  const authorLogin = (prCtx['authorLogin'] as string) ?? '';
 
   if (repoId) {
     await ddbPut({
@@ -143,7 +148,76 @@ reportsRouter.post('/:reportId/approve', requireRole('MEMBER'), async (c) => {
     });
   }
 
+  // ── 4. Send GitHub PR Review via notification-worker ─────────────────────
+  if (prUrl && SQS_NOTIFICATION_QUEUE_URL) {
+    // Get org's GitHub installationId from Integrations table
+    const integration = await ddbGet<{ installationId: string; status: string }>({
+      TableName: Config.tableName('Integrations'),
+      Key: { PK: `ORG#${orgId}`, SK: 'INTEGRATION#GITHUB' },
+    });
+
+    // notification-queue is a STANDARD queue — do NOT pass FIFO params (MessageGroupId etc.)
+    await sqsSendMessage(
+      SQS_NOTIFICATION_QUEUE_URL,
+      {
+        type: 'NOTIFICATION',
+        messageId: ulid(),
+        timestamp: now,
+        source: 'dashboard',
+        notificationType: 'REVIEW_SUBMITTED',
+        orgId,
+        recipients: [userId],
+        installationId: integration?.installationId ?? '',
+        payload: {
+          prUrl,
+          prNumber,
+          repoId,
+          decision,
+          comment: comment ?? '',
+          reportId,
+          riskLevel,
+          reviewerUserId: userId,
+        },
+      },
+    ).catch((err: unknown) => {
+      console.error('[reports] REVIEW_SUBMITTED SQS send failed', { reportId, orgId, error: String(err) });
+    });
+  }
+
   return c.json({ approvalId, decision, reportId });
+});
+
+/**
+ * DELETE /reports/:reportId — soft-delete a report (sets status to DELETED)
+ */
+reportsRouter.delete('/:reportId', requireRole('ADMIN'), async (c) => {
+  const claims = extractClaims(c)!;
+  const orgId = claims['custom:orgId'];
+  const { reportId } = c.req.param();
+
+  const report = await ddbGet({
+    TableName: Config.tableName('Reports'),
+    Key: { PK: `REPORT#${reportId}`, SK: 'METADATA' },
+  }) as Record<string, unknown> | null;
+
+  if (!report || (report['orgId'] as string) !== orgId) {
+    return c.json({ error: 'NOT_FOUND' }, 404);
+  }
+
+  const now = new Date().toISOString();
+  // Soft-delete: mark as DELETED so it's excluded from list queries (GSI3 filter)
+  await ddbUpdate({
+    TableName: Config.tableName('Reports'),
+    Key: { PK: `REPORT#${reportId}`, SK: 'METADATA' },
+    UpdateExpression: 'SET approvalStatus = :deleted, GSI3SK = :gsi3sk, updatedAt = :now',
+    ExpressionAttributeValues: {
+      ':deleted': 'DELETED',
+      ':gsi3sk': `DELETED#${now}`,
+      ':now': now,
+    },
+  });
+
+  return c.json({ ok: true, reportId });
 });
 
 /**

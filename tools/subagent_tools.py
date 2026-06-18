@@ -73,7 +73,7 @@ def invoke_devops_agent(incident_context_json: str) -> str:
 
     ctx = json.loads(incident_context_json)
     agent_id = _require("INCIDENT_AGENT_ID")
-    alias_id = _require("INCIDENT_ALIAS_ID")
+    alias_id = _require("INCIDENT_AGENT_ALIAS_ID")
     session_id = f"incident-{ctx.get('incidentId', uuid4())}"
 
     prompt = f"""You are the DevOps Incident Agent. Investigate the following production incident.

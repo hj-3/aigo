@@ -44,10 +44,12 @@ module "kms" {
 # VPC
 # ──────────────────────────────────────────────────────────────────────────────
 module "vpc" {
-  source             = "../../modules/vpc"
-  project            = var.project
-  region             = var.aws_region
-  enable_nat_gateway = var.enable_nat_gateway
+  source                     = "../../modules/vpc"
+  project                    = var.project
+  region                     = var.aws_region
+  enable_nat_gateway         = var.enable_nat_gateway
+  single_nat_gateway         = true   # 1 NAT GW (first AZ only) to minimise cost
+  enable_interface_endpoints = false  # VPC endpoints ~$145/month — use NAT Gateway until launch
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -82,18 +84,6 @@ module "ses" {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Bedrock Knowledge Bases (4 domain-separated)
-# ──────────────────────────────────────────────────────────────────────────────
-module "bedrock_kb" {
-  source         = "../../modules/bedrock-kb"
-  project        = var.project
-  aws_region     = var.aws_region
-  aws_account_id = local.account_id
-  kb_bucket_arn  = module.s3.bucket_arns["kb"]
-  kb_bucket_name = module.s3.bucket_names["kb"]
-}
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Bedrock AgentCore — 3 Strands agents (Phase L: code/infra/risk/security merged into orchestrator)
 # ──────────────────────────────────────────────────────────────────────────────
 module "bedrock_agentcore" {
@@ -101,7 +91,7 @@ module "bedrock_agentcore" {
   project               = var.project
   aws_region            = var.aws_region
   aws_account_id        = local.account_id
-  knowledge_base_arns   = [module.bedrock_kb.knowledge_base_arn]
+  knowledge_base_arns   = []  # KB replaced by S3 Vector index — see docs/impl/kb-s3-vector.md
   s3_agent_packages_arn = module.s3.bucket_arns["agent_packages"]
   kms_key_arn           = module.kms.lambda_key_arn
   foundation_model      = "anthropic.claude-3-5-sonnet-20240620-v1:0"
@@ -111,8 +101,6 @@ module "bedrock_agentcore" {
     incident-agent = file("${path.root}/../../../../prompts/v1/incident-agent.md")
     fix-agent      = file("${path.root}/../../../../prompts/v1/fix-agent.md")
   }
-
-  depends_on = [module.bedrock_kb]
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -128,8 +116,12 @@ module "sqs" {
 # EventBridge
 # ──────────────────────────────────────────────────────────────────────────────
 module "eventbridge" {
-  source  = "../../modules/eventbridge"
-  project = var.project
+  source                 = "../../modules/eventbridge"
+  project                = var.project
+  analysis_queue_arn     = module.sqs.queue_arns["analysis"]
+  incident_queue_arn     = module.sqs.queue_arns["incident"]
+  notification_queue_arn = module.sqs.queue_arns["notification"]
+  depends_on             = [module.sqs]
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -194,8 +186,9 @@ locals {
     ECS_CLUSTER_ARN            = module.ecs.cluster_arn
     GITHUB_SECRET_ARN          = aws_secretsmanager_secret.github_app.arn
     SLACK_SECRET_ARN           = aws_secretsmanager_secret.slack.arn
-    # Bedrock Knowledge Base (kb_tools.py reads BEDROCK_KB_ID, filters by category metadata)
-    BEDROCK_KB_ID = module.bedrock_kb.knowledge_base_id
+    # S3 Vector KB — kb_tools.py loads vector-index/index.json, embeds queries with Titan
+    KB_BUCKET    = module.s3.bucket_names["kb"]
+    KB_INDEX_KEY = "vector-index/index.json"
     # Bedrock Agent IDs — lightweight worker (agentcore-client.ts)
     ORCHESTRATOR_AGENT_ID       = module.bedrock_agentcore.agent_ids["orchestrator"]
     ORCHESTRATOR_AGENT_ALIAS_ID = module.bedrock_agentcore.agent_alias_ids["orchestrator"]
@@ -211,6 +204,7 @@ locals {
     SLACK_CLIENT_SECRET    = var.slack_client_secret
     SLACK_REDIRECT_URI     = "https://api.seolphung.com/auth/slack/callback"
     DASHBOARD_URL          = "https://app.seolphung.com"
+    SES_FROM_ADDRESS       = "noreply@seolphung.com"
     # SSM path prefix for per-org Slack bot tokens
     SSM_SLACK_TOKEN_PATH = "/${var.project}/integrations/slack"
     # Bedrock Guardrail — Prompt Injection protection for Orchestrator
@@ -352,7 +346,8 @@ module "lambda_orchestrator" {
   environment_variables = merge(local.lambda_common_env, {
     MODEL_ID       = "anthropic.claude-3-5-sonnet-20240620-v1:0"
     DASHBOARD_URL  = "https://app.seolphung.com"
-    BEDROCK_KB_ID  = module.bedrock_kb.knowledge_base_id
+    KB_BUCKET      = module.s3.bucket_names["kb"]
+    KB_INDEX_KEY   = "vector-index/index.json"
   })
 }
 
@@ -473,6 +468,7 @@ module "api_gateway" {
     # Reports
     "GET /reports"                          = module.lambda_dashboard_api.alias_arn
     "GET /reports/{reportId}"               = module.lambda_dashboard_api.alias_arn
+    "DELETE /reports/{reportId}"            = module.lambda_dashboard_api.alias_arn
     "POST /reports/{reportId}/approve"      = module.lambda_dashboard_api.alias_arn
     "GET /reports/{reportId}/approvals"     = module.lambda_dashboard_api.alias_arn
     # Fix requests
@@ -485,6 +481,7 @@ module "api_gateway" {
     "GET /incidents/{incidentId}"      = module.lambda_dashboard_api.alias_arn
     # Jobs
     "GET /jobs"                        = module.lambda_dashboard_api.alias_arn
+    "GET /jobs/active"                 = module.lambda_dashboard_api.alias_arn
     "GET /jobs/{jobId}"                = module.lambda_dashboard_api.alias_arn
     "GET /jobs/agent-runs"             = module.lambda_dashboard_api.alias_arn
     # Repositories
@@ -495,6 +492,8 @@ module "api_gateway" {
     # Team management
     "GET /team/members"                = module.lambda_dashboard_api.alias_arn
     "POST /team/invite"                = module.lambda_dashboard_api.alias_arn
+    "GET /team/invite/{invitationId}"  = module.lambda_dashboard_api.alias_arn
+    "POST /team/accept-invite"         = module.lambda_dashboard_api.alias_arn
     "PATCH /team/members/{userId}/role" = module.lambda_dashboard_api.alias_arn
     "DELETE /team/members/{userId}"    = module.lambda_dashboard_api.alias_arn
     # Integrations
@@ -620,6 +619,24 @@ resource "aws_lambda_event_source_mapping" "notification" {
   batch_size                         = 10
   function_response_types            = ["ReportBatchItemFailures"]
   maximum_batching_window_in_seconds = 5
+}
+
+# Slack /approve /reject /investigate commands → lightweight-worker (processCommand)
+resource "aws_lambda_event_source_mapping" "command" {
+  event_source_arn                   = module.sqs.queue_arns["command"]
+  function_name                      = module.lambda_lightweight_worker.alias_arn
+  batch_size                         = 1
+  function_response_types            = ["ReportBatchItemFailures"]
+  maximum_batching_window_in_seconds = 0
+}
+
+# CloudWatch alarm → aws-event-connector → incident-queue → lightweight-worker (processIncident)
+resource "aws_lambda_event_source_mapping" "incident" {
+  event_source_arn                   = module.sqs.queue_arns["incident"]
+  function_name                      = module.lambda_lightweight_worker.alias_arn
+  batch_size                         = 1
+  function_response_types            = ["ReportBatchItemFailures"]
+  maximum_batching_window_in_seconds = 0
 }
 
 # ──────────────────────────────────────────────────────────────────────────────

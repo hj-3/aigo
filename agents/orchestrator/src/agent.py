@@ -4,7 +4,8 @@ Orchestrator Agent — Single Strands Agent with Multi-Persona analysis.
 Flow (PR_ANALYSIS):
   0. Create GitHub Check Run → signal analysis started
   1. Retrieve repo/developer memory → contextual history
-  2. For each persona: search KB → analyze diff → save_findings
+  2. For SELECTED personas only: search KB → analyze diff → save_findings
+     Personas selected based on diff file types (classify_personas)
   3. Compute Risk Score (0-100) → save_report
   4. Update GitHub Check Run with conclusion
   5. notify_analysis_complete (per-org Slack) → post_pr_comment (with risk_score)
@@ -94,12 +95,19 @@ risk_score = min(sum, 100)
 - CRITICAL/BLOCK → action_required
 
 ## Execution Rules
-1. Search KB BEFORE each persona analysis (use relevant query)
-2. Run ALL 4 persona analyses — never skip any even if diff is small
-3. Only flag issues in CHANGED lines (additions in the diff)
-4. Never fabricate findings — only report what you genuinely detect
+1. In Step 0c you MUST decide which personas to run — state your decision explicitly before starting analysis
+2. Only run the personas you declared in Step 0c — save time and tokens by skipping irrelevant ones
+3. Only flag issues in CHANGED lines (additions in the diff) — never flag unchanged code
+4. Never fabricate findings — only report what you genuinely detect in the diff
 5. Always pass org_id and installation_id when calling Slack/GitHub tools
 6. Complete ALL steps in the pipeline — never stop early
+7. For skipped personas, do NOT call save_findings — omit them entirely
+
+## Persona Selection Criteria
+- **Code Reviewer**: ALWAYS run — every PR has code implications
+- **Infra Reviewer**: Run ONLY when diff contains *.tf, *.hcl, Dockerfile, docker-compose*, helm/, k8s/, kubernetes/, *.yaml/.yml in infra/config directories
+- **Security Agent**: Run for all code changes; SKIP only for pure documentation PRs (all files are *.md, *.txt, *.rst)
+- **Risk Reviewer**: Run for all code changes; SKIP only for pure documentation PRs
 """
 
 INCIDENT_SYSTEM_PROMPT = """You are AIGO — the DevOps Incident Response Orchestrator.
@@ -154,13 +162,14 @@ def build_agent(system_prompt: str = ORCHESTRATOR_SYSTEM_PROMPT) -> Agent:
             ddb_tools.save_pr_analysis_memory,
             ddb_tools.get_incident_memory,
             ddb_tools.save_incident_memory,
-            # GitHub Check Run
+            # GitHub Check Run + merge
             github_tools.create_check_run,
             github_tools.update_check_run,
+            github_tools.post_pr_comment,
+            github_tools.auto_merge_pr,
             # Notifications
             slack_tools.notify_analysis_complete,
             slack_tools.send_incident_update,
-            github_tools.post_pr_comment,
             # Incident sub-agent
             subagent_tools.invoke_devops_agent,
         ],
@@ -199,10 +208,12 @@ def _run_pr_analysis(job_input: dict[str, Any], log: Any) -> dict[str, Any]:
     author_login = pr_ctx.get("authorLogin", "")
     dashboard_url = "https://app.seolphung.com"
 
+    changed_files: list[str] = diff_meta.get("changedFiles", [])
+
     log.info(
-        "Orchestrator PR analysis (multi-persona)",
+        "Orchestrator PR analysis — starting",
         pr_number=pr_number,
-        changed_files=len(diff_meta.get("changedFiles", [])),
+        changed_files=len(changed_files),
         diff_chars=len(diff_content),
     )
 
@@ -211,10 +222,13 @@ def _run_pr_analysis(job_input: dict[str, Any], log: Any) -> dict[str, Any]:
     prompt = f"""Analyze Pull Request #{pr_number} — {pr_ctx.get("prTitle", "")}.
 Repository: {repo_full_name} | Author: {author_login}
 Branch: {pr_ctx.get("headBranch", "")} → {pr_ctx.get("baseBranch", "")}
-Files changed: {len(diff_meta.get("changedFiles", []))} (+{diff_meta.get("additions", 0)} / -{diff_meta.get("deletions", 0)})
+Files changed: {len(changed_files)} (+{diff_meta.get("additions", 0)} / -{diff_meta.get("deletions", 0)})
 Head SHA: {head_sha}
 Installation ID: {installation_id}
 Org ID: {org_id}
+
+## Changed Files
+{chr(10).join(f"  - {f}" for f in changed_files[:60])}
 
 ## PR Diff
 ```diff
@@ -225,7 +239,6 @@ Org ID: {org_id}
 {job_input_json}
 
 ---
-Execute the full multi-persona analysis pipeline. Complete EVERY step below.
 
 ### Step 0 — GitHub Check Run (signal analysis started)
 Call create_check_run(
@@ -233,49 +246,70 @@ Call create_check_run(
   head_sha="{head_sha}",
   installation_id="{installation_id}"
 )
-Save the returned check_run_id for use in Step 6.
+Save the returned check_run_id.
 
-### Step 0b — Retrieve History (context for this analysis)
+### Step 0b — Retrieve History
 0b-1. Call get_repo_memory(org_id="{org_id}", repo_id="{repo_id}", limit=3)
-      Review past risk scores and recurring patterns for this repo.
 0b-2. Call get_developer_memory(org_id="{org_id}", author_login="{author_login}", limit=5)
-      Check for developer-specific recurring patterns.
 
-### Step 1 — Code Review
+### Step 0c — Persona Selection (YOUR DECISION — state explicitly before proceeding)
+Based on the Changed Files list above, decide which analysis personas are needed:
+- Code Reviewer: needed for ANY code changes
+- Infra Reviewer: needed ONLY if diff contains *.tf, *.hcl, Dockerfile, docker-compose, helm/, k8s/ files
+- Security Agent: needed for all non-documentation changes
+- Risk Reviewer: needed for all non-documentation changes
+
+State your decision in this format:
+"PERSONAS SELECTED: Code Reviewer, [Infra Reviewer,] Security Agent, Risk Reviewer"
+"PERSONAS SKIPPED: [Infra Reviewer — no IaC files detected]"
+
+Then execute ONLY the steps for personas you selected.
+
+---
+Run the following steps FOR EACH SELECTED PERSONA (skip steps for unselected personas):
+
+### [IF Code Reviewer selected] — Code Review
 1a. Call search_coding_standards("code quality bug patterns race condition null check error handling test coverage")
-1b. Analyze the diff as Code Reviewer using the KB context. Identify all genuine issues in changed lines.
+1b. Analyze the diff as Code Reviewer. Identify all genuine issues in CHANGED lines only.
 1c. Call save_findings(job_id="{job_id}", agent_name="code-reviewer", findings=[list of finding dicts])
-    Each finding: {{"severity":"...", "category":"...", "location":"file:line", "description":"...", "confidence":0.0-1.0, "fixable":true|false, "fix_suggestion":"..."}}
+    Each finding: {{"severity":"CRITICAL|HIGH|MEDIUM|LOW|INFO", "category":"...", "location":"file:line", "description":"...", "confidence":0.0-1.0, "fixable":true|false, "fix_suggestion":"..."}}
 
-### Step 2 — Infrastructure Review
+### [IF Infra Reviewer selected] — Infrastructure Review
 2a. Call search_infrastructure_standards("AWS IAM terraform security encryption well-architected reliability cost")
 2b. Analyze the diff as Infra Reviewer. Only flag IaC files.
 2c. Call save_findings(job_id="{job_id}", agent_name="infra-reviewer", findings=[...])
 
-### Step 3 — Security Analysis
+### [IF Security Agent selected] — Security Analysis
 3a. Call search_security_standards("OWASP injection authentication secrets vulnerabilities CWE")
-3b. Analyze the diff as Security Agent. Check for all OWASP Top 10 categories.
+3b. Analyze the diff as Security Agent. Check OWASP Top 10 categories in changed lines.
 3c. Call save_findings(job_id="{job_id}", agent_name="security-agent", findings=[...])
 
-### Step 4 — Risk Assessment
+### [IF Risk Reviewer selected] — Risk Assessment
 4a. Call search_risk_policies("API breaking changes deployment risk rollback blast radius change management")
 4b. Analyze the diff as Risk Reviewer. Assess deployment blast radius and rollback complexity.
 4c. Call save_findings(job_id="{job_id}", agent_name="risk-reviewer", findings=[...])
 
+---
+
 ### Step 5 — Compute Score and Save Report
-5a. Count all findings from steps 1-4 by severity.
-5b. Compute risk_score = min((CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1), 100)
-5c. Determine risk_level: 0-20→LOW, 21-50→MEDIUM, 51-80→HIGH, 81-100→CRITICAL
-5d. Determine merge_recommendation: LOW→APPROVE, MEDIUM/HIGH→REQUEST_CHANGES, CRITICAL→BLOCK
+5a. Count all findings from selected persona steps by severity.
+5b. risk_score = min((CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1), 100)
+5c. risk_level: 0-20→LOW, 21-50→MEDIUM, 51-80→HIGH, 81-100→CRITICAL
+5d. merge_recommendation: LOW→APPROVE, MEDIUM/HIGH→REQUEST_CHANGES, CRITICAL→BLOCK
 5e. Call save_report(
       job_id="{job_id}",
       org_id="{org_id}",
       repo_id="{repo_id}",
       risk_level=<determined>,
-      risk_score=<computed integer 0-100>,
+      risk_score=<integer 0-100>,
       merge_recommendation=<determined>,
-      summary="<2-3 sentence summary>",
-      findings_by_severity={{"CRITICAL": N, "HIGH": N, "MEDIUM": N, "LOW": N, "INFO": N}}
+      summary="<2-3 sentence summary, mention which personas were selected and key findings>",
+      findings_by_severity={{"CRITICAL": N, "HIGH": N, "MEDIUM": N, "LOW": N, "INFO": N}},
+      pr_number={pr_number},
+      pr_url="{pr_url}",
+      pr_title="{pr_ctx.get('prTitle', '')}",
+      commit_sha="{pr_ctx.get('commitSha', head_sha)}",
+      author_login="{author_login}"
     )
     Save the returned report_id.
 
@@ -285,7 +319,7 @@ Call update_check_run(
   check_run_id=<check_run_id from Step 0>,
   conclusion=<"success" if LOW, "neutral" if MEDIUM, "action_required" if HIGH/CRITICAL>,
   output_title="<N Critical, N High, N Medium findings>",
-  output_summary="<same summary from Step 5>",
+  output_summary="<summary from Step 5>",
   installation_id="{installation_id}"
 )
 
@@ -316,6 +350,19 @@ Call post_pr_comment(
   installation_id="{installation_id}"
 )
 
+### Step 8b — Auto-merge (if applicable)
+Call auto_merge_pr(
+  repo_full_name="{repo_full_name}",
+  pr_number={pr_number},
+  org_id="{org_id}",
+  risk_score=<risk_score from step 5>,
+  merge_recommendation=<merge_recommendation from step 5>,
+  installation_id="{installation_id}"
+)
+The tool checks org.approvalRequired and org.riskThreshold before merging.
+If approvalRequired=True or risk_score > threshold, it skips merge (returns a message — do not retry).
+If APPROVE and below threshold, it merges the PR automatically.
+
 ### Step 9 — Save Analysis Memory
 Call save_pr_analysis_memory(
   org_id="{org_id}",
@@ -330,7 +377,7 @@ Call save_pr_analysis_memory(
   merge_recommendation=<from step 5>
 )
 
-Complete ALL 9 steps. Do not stop early.
+Complete ALL steps 0 through 9. Do not stop early.
 """
 
     try:

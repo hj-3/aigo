@@ -317,3 +317,81 @@ CloudWatch Alarm (5xx > 5%)
     → Dashboard: Incident Report 생성
     → Slack: thread에 요약 전송
 ```
+
+---
+
+## 변경 이력
+
+### 2026-06-17 — github-connector EventBridge 제거 (v25)
+
+**변경 내용**: `github-connector`가 EventBridge Custom Bus를 경유하지 않고 `aigo-analysis-queue.fifo`에 **직접** `SendMessageCommand`로 메시지 전송.
+
+**이유**: EventBridge Rule 전달 시 `MessageGroupId`가 `"pr-analysis"` 하드코딩 → 모든 조직의 잡이 동일 FIFO 그룹 → 순차 처리 블로킹 발생. 직접 전송으로 `MessageGroupId=orgId` 설정, 조직별 FIFO 그룹 독립 처리.
+
+**영향 범위**: 아키텍처 다이어그램 Layer 4 수정 필요.
+```
+변경 전: github-connector → EventBridge → Rule → analysis-queue.fifo
+변경 후: github-connector → analysis-queue.fifo (직접, MessageGroupId=orgId)
+```
+EventBridge Bus 자체(`aigo-bus`)는 `aws-event-connector` → `incident-queue.fifo` 경로에서 여전히 사용.
+
+---
+
+### 2026-06-16 — command-queue / incident-queue Lambda ESM 추가
+
+**변경 내용**: `aigo-command-queue.fifo`와 `aigo-incident-queue.fifo`에 `lightweight-worker`를 이벤트 소스로 매핑하는 Lambda ESM(Event Source Mapping) 추가.
+
+**이유**: Terraform에 ESM이 없어 Slack `/approve`, `/reject`, `/investigate` 명령이 큐에 쌓이기만 하고 처리되지 않았음 (2026-06-16 이전).
+
+---
+
+### 2026-06-15 — Layer 7 Tool 계층 실제 구현 반영
+
+**변경 내용**: Layer 7 다이어그램의 "MCP Tools (AgentCore Gateway)" 설명은 초기 설계안. 실제 구현은 Strands `@tool` 데코레이터로 Orchestrator Lambda 내부에서 in-process 실행.
+
+- `AgentCore Gateway` 인프라 없음
+- `MCP 서버` 없음 (Lambda/Container로 구현 없음)
+- Agent는 Python 함수(`@tool`)를 동일 프로세스에서 직접 호출
+
+---
+
+### 2026-06-15 — Layer 7 Memory 실제 구현 반영
+
+**변경 내용**: Layer 7의 "AgentCore Memory (SDK)" 설명은 Bedrock AgentCore 네이티브 Memory를 사용하는 것처럼 표현되어 있으나, 실제 구현은 **DynamoDB 기반 커스텀 Memory** (`aigo-AgentMemory` 테이블).
+
+| Memory 타입 | PK 패턴 | TTL |
+|-------------|---------|-----|
+| PR_ANALYSIS | `MEMORY#PR#ORG#{orgId}#REPO#{repoId}` | 90일 |
+| INCIDENT | `MEMORY#INCIDENT#ORG#{orgId}#SERVICE#{svc}` | 1년 |
+
+상세: `docs/impl/agent-memory.md` 참조.
+
+---
+
+### 2026-06-15 — Layer 8 KB: AOSS → S3 Vector Index
+
+**변경 내용**: "Bedrock Knowledge Base"(Amazon OpenSearch Serverless 기반)가 비활성화되고 **S3 Vector Index** 방식으로 전환.
+
+**이유**: AOSS 비용 ~$692/월 → S3 Vector Index ~$1/월 (Titan Embeddings v2, 18 chunks).
+
+```
+변경 전: Bedrock Knowledge Base → AOSS (OpenSearch Serverless) → 벡터 검색
+변경 후: S3 aigo-kb/vector-index/index.json → Titan Embeddings v2 cosine similarity → 상위 5 chunks
+```
+
+상세: `docs/impl/kb-s3-vector.md` 참조.
+
+---
+
+### 2026-06-16 — Layer 5 Execution: SQS 큐 타입 수정
+
+**변경 내용**: 아키텍처 다이어그램 및 인프라 문서에 기술된 일부 SQS 큐 타입이 실제와 다름.
+
+| 큐 | 실제 타입 | 변경 전 표기 |
+|----|---------|------------|
+| `aigo-analysis-queue.fifo` | FIFO | Standard |
+| `aigo-command-queue.fifo` | FIFO | Standard |
+| `aigo-incident-queue.fifo` | FIFO | Standard |
+| `aigo-notification-queue` | Standard | Standard (정확) |
+| `aigo-fix-queue.fifo` | FIFO | Standard |
+

@@ -54,6 +54,110 @@ function parsePrUrl(prUrl: string): { owner: string; repo: string; prNumber: num
   return { owner: match[1], repo: match[2], prNumber: Number(match[3]) };
 }
 
+/** Create a formal GitHub PR review (APPROVE or REQUEST_CHANGES) */
+export async function createPrReview(
+  prUrl: string,
+  event: 'APPROVE' | 'REQUEST_CHANGES',
+  body: string,
+  credentials: GithubAppCredentials,
+  installationId?: string,
+): Promise<void> {
+  const { owner, repo, prNumber } = parsePrUrl(prUrl);
+  const creds = installationId ? { ...credentials, installationId } : credentials;
+  const token = await getInstallationToken(creds);
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/reviews`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'AgentOps-NotificationWorker',
+      },
+      body: JSON.stringify({ event, body }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GitHub PR review failed (${response.status}): ${text}`);
+  }
+}
+
+/** Merge a PR via the GitHub API (squash merge) */
+export async function mergePr(
+  prUrl: string,
+  credentials: GithubAppCredentials,
+  installationId?: string,
+): Promise<void> {
+  const { owner, repo, prNumber } = parsePrUrl(prUrl);
+  const creds = installationId ? { ...credentials, installationId } : credentials;
+  const token = await getInstallationToken(creds);
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
+    {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'AgentOps-NotificationWorker',
+      },
+      body: JSON.stringify({
+        commit_title: `Approved and merged by AgentOps`,
+        commit_message: 'Approved via AgentOps dashboard or Slack /approve command.',
+        merge_method: 'merge',
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    // 405 = not mergeable (branch protection, open reviews, conflicts) — log, don't throw
+    if (response.status === 405 || response.status === 422) {
+      console.warn(`[notification-worker] PR not mergeable (${response.status}): ${text}`);
+      return;
+    }
+    throw new Error(`GitHub PR merge failed (${response.status}): ${text}`);
+  }
+}
+
+/** Close a PR (used when reviewer rejects — prevents re-merging without a new review) */
+export async function closePr(
+  prUrl: string,
+  credentials: GithubAppCredentials,
+  installationId?: string,
+): Promise<void> {
+  const { owner, repo, prNumber } = parsePrUrl(prUrl);
+  const creds = installationId ? { ...credentials, installationId } : credentials;
+  const token = await getInstallationToken(creds);
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+        'Content-Type': 'application/json',
+        'User-Agent': 'AgentOps-NotificationWorker',
+      },
+      body: JSON.stringify({ state: 'closed' }),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`GitHub PR close failed (${response.status}): ${text}`);
+  }
+}
+
 export async function postPrComment(
   prUrl: string,
   body: string,

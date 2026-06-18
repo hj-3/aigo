@@ -106,6 +106,12 @@ desktop.ini
 new-task-def.json
 
 # ──────────────────────────────────────
+# Archived modules (local reference only, not tracked in git)
+# ──────────────────────────────────────
+infra/terraform/modules/archive/
+archive/
+
+# ──────────────────────────────────────
 # Misc
 # ──────────────────────────────────────
 *.log

@@ -128,8 +128,8 @@ export function SettingsPage() {
 
         <label className="flex items-center justify-between">
           <div>
-            <p className="text-sm font-medium text-term">승인 필수</p>
-            <p className="text-xs text-term-secondary mt-0.5">높은 리스크 항목에 대해 사람의 승인이 필요합니다</p>
+            <p className="text-sm font-medium text-term">수동 승인 필수</p>
+            <p className="text-xs text-term-secondary mt-0.5">활성화 시 리스크 수준과 무관하게 사람이 직접 승인해야 PR이 머지됩니다</p>
           </div>
           <input
             type="checkbox"
@@ -142,18 +142,22 @@ export function SettingsPage() {
 
         <div>
           <label className="block text-sm font-medium text-term mb-1">
-            리스크 임계값
+            자동 머지 임계값
           </label>
-          <p className="text-xs text-term-secondary mb-2">이 수준 이상의 리스크는 승인 요청을 트리거합니다</p>
+          <p className="text-xs text-term-secondary mb-2">
+            이 수준 미만의 PR은 APPROVE 권고 시 자동으로 머지됩니다. 수동 승인 필수가 켜져 있으면 무시됩니다.
+          </p>
           <select
             disabled={!hasAdminRole}
             value={effective.riskThreshold ?? 'HIGH'}
             onChange={(e) => field('riskThreshold', e.target.value)}
             className="w-48 input-term disabled:opacity-40"
           >
-            <option value="CRITICAL">CRITICAL만</option>
-            <option value="HIGH">HIGH 이상</option>
-            <option value="MEDIUM">MEDIUM 이상</option>
+            <option value="NONE">자동 머지 없음</option>
+            <option value="LOW">LOW만 (리스크 점수 &lt; 20)</option>
+            <option value="MEDIUM">MEDIUM 이하 (리스크 점수 &lt; 40)</option>
+            <option value="HIGH">HIGH 이하 (리스크 점수 &lt; 75)</option>
+            <option value="CRITICAL">모두 자동 머지</option>
           </select>
         </div>
       </div>

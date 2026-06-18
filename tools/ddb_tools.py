@@ -72,6 +72,24 @@ def save_findings(job_id: str, agent_name: str, findings: list[dict[str, Any]]) 
         table.put_item(Item=item)
         saved += 1
 
+    # Write AgentRun record so the dashboard can show which personas actually ran.
+    # Even with 0 findings, writing this record marks the persona as invoked (not skipped).
+    agent_run_table = _table("AgentRuns")
+    run_id = f"{job_id}-{agent_name}"
+    agent_run_table.put_item(Item={
+        "PK": f"RUN#{run_id}",
+        "SK": "METADATA",
+        "runId": run_id,
+        "jobId": job_id,
+        "agentType": agent_name,
+        "status": "COMPLETED",
+        "findingsCount": saved,
+        "completedAt": now,
+        "startedAt": now,
+        "GSI1PK": f"JOB#{job_id}",
+        "GSI1SK": agent_name,
+    })
+
     logger.info("Findings saved", job_id=job_id, agent=agent_name, count=saved)
     return f"Saved {saved} findings for job {job_id}"
 
@@ -87,6 +105,11 @@ def save_report(
     findings_by_severity: dict[str, int],
     risk_score: int = 0,
     report_s3_key: str | None = None,
+    pr_number: int = 0,
+    pr_url: str = "",
+    pr_title: str = "",
+    commit_sha: str = "",
+    author_login: str = "",
 ) -> str:
     """
     Saves the consolidated analysis report to DynamoDB.
@@ -101,12 +124,25 @@ def save_report(
         findings_by_severity: Dict of severity → count
         risk_score: Numeric risk score 0-100 (CRITICAL×25 + HIGH×10 + MEDIUM×3 + LOW×1, capped at 100)
         report_s3_key: Optional S3 key for full report JSON
+        pr_number: Pull Request number
+        pr_url: GitHub PR URL
+        pr_title: Pull Request title
+        commit_sha: Head commit SHA
+        author_login: GitHub username of the PR author
 
     Returns:
         The generated report ID
     """
     report_id = f"{job_id}-report"
     now = _utcnow()
+
+    pr_context = {
+        "prNumber": pr_number,
+        "prUrl": pr_url,
+        "prTitle": pr_title,
+        "commitSha": commit_sha,
+        "authorLogin": author_login,
+    }
 
     table = _table("Reports")
     table.put_item(
@@ -123,6 +159,7 @@ def save_report(
             "approvalStatus": "PENDING",
             "summary": summary,
             "findingsBySeverity": findings_by_severity,
+            "prContext": pr_context,
             "reportS3Key": report_s3_key,
             "createdAt": now,
             "updatedAt": now,

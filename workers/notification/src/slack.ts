@@ -50,7 +50,19 @@ export function buildBlocks(type: NotificationType, p: Record<string, unknown>):
     case 'INCIDENT_DETECTED':    return incidentDetectedBlocks(p);
     case 'INCIDENT_RESOLVED':    return incidentResolvedBlocks(p);
     case 'APPROVAL_NEEDED':      return approvalNeededBlocks(p);
+    case 'REVIEW_SUBMITTED':     return reviewSubmittedBlocks(p);
+    default:                     return [];
   }
+}
+
+function reviewSubmittedBlocks(p: Record<string, unknown>): SlackBlock[] {
+  const decision = p['decision'] as string ?? 'UNKNOWN';
+  const emoji = decision === 'APPROVED' ? '✅' : '❌';
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text: `${emoji} *PR 검토 완료* — ${decision}` } },
+    { type: 'section', text: { type: 'mrkdwn', text: `리포트: \`${p['reportId'] ?? '-'}\`  PR #${p['prNumber'] ?? '-'}` } },
+    ...(p['comment'] ? [{ type: 'section', text: { type: 'mrkdwn', text: `> ${p['comment']}` } }] : []),
+  ];
 }
 
 // ── Block builders ────────────────────────────────────────────────────────────

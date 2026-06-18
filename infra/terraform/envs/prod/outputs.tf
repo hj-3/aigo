@@ -49,8 +49,3 @@ output "bedrock_agent_alias_arns" {
   description = "Map of agent name to Agent Alias ARN (used by workers)"
   value       = module.bedrock_agentcore.agent_alias_arns
 }
-
-output "bedrock_kb_id" {
-  description = "Bedrock Knowledge Base ID"
-  value       = module.bedrock_kb.knowledge_base_id
-}

@@ -265,6 +265,81 @@ def set_commit_status(
     return f"Commit status set to {state}"
 
 
+@tool
+def auto_merge_pr(
+    repo_full_name: str,
+    pr_number: int,
+    org_id: str,
+    risk_score: int,
+    merge_recommendation: str,
+    installation_id: str = "",
+) -> str:
+    """
+    Auto-merges a PR if org policy allows it.
+
+    Checks org settings from DynamoDB:
+    - approvalRequired: if True, skips auto-merge (human must approve)
+    - riskThreshold: numeric 0-100; only merges if risk_score <= threshold (default 20)
+
+    Only merges when merge_recommendation == "APPROVE".
+
+    Args:
+        repo_full_name: Repository in owner/repo format
+        pr_number: Pull Request number
+        org_id: Organization ID (used to look up settings)
+        risk_score: Numeric risk score from analysis (0-100)
+        merge_recommendation: APPROVE | REQUEST_CHANGES | BLOCK
+        installation_id: GitHub App installation ID
+
+    Returns:
+        Result string describing what happened
+    """
+    if merge_recommendation != "APPROVE":
+        return f"Auto-merge skipped: recommendation is {merge_recommendation} (not APPROVE)"
+
+    # Check org policy
+    ddb = boto3.resource("dynamodb", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
+    prefix = os.environ.get("DYNAMODB_TABLE_PREFIX", "aigo")
+    org_table = ddb.Table(f"{prefix}-Organizations")
+
+    resp = org_table.get_item(Key={"PK": f"ORG#{org_id}", "SK": "METADATA"})
+    org = resp.get("Item", {})
+
+    approval_required = org.get("approvalRequired", False)
+    # riskThreshold is stored as a risk-level string: NONE | LOW | MEDIUM | HIGH | CRITICAL
+    # Convert to a numeric upper bound for risk_score comparison.
+    _threshold_map = {"NONE": -1, "LOW": 19, "MEDIUM": 39, "HIGH": 74, "CRITICAL": 100}
+    raw = org.get("riskThreshold", "HIGH")
+    risk_threshold = _threshold_map.get(str(raw), 74)  # default: HIGH (auto-merge if score <= 74)
+
+    if approval_required:
+        logger.info("Auto-merge skipped: approvalRequired=True", org_id=org_id)
+        return "Auto-merge skipped: org requires manual approval via /approve"
+
+    if risk_score > risk_threshold:
+        logger.info("Auto-merge skipped: above threshold", risk_score=risk_score, threshold=risk_threshold)
+        return f"Auto-merge skipped: risk_score {risk_score} > org threshold {risk_threshold} — manual approval required"
+
+    # Perform merge
+    token = _get_installation_token(repo_full_name, installation_id)
+    try:
+        _github_request(
+            "PUT",
+            f"https://api.github.com/repos/{repo_full_name}/pulls/{pr_number}/merge",
+            token,
+            json={
+                "commit_title": f"Auto-merged by AgentOps (risk score: {risk_score}/100, level: LOW)",
+                "commit_message": "Automatically merged after AgentOps analysis. Risk level: LOW — no manual review required.",
+                "merge_method": "merge",
+            },
+        )
+        logger.info("PR auto-merged", repo=repo_full_name, pr_number=pr_number, risk_score=risk_score)
+        return f"PR #{pr_number} auto-merged (risk_score={risk_score}/{risk_threshold} threshold)"
+    except Exception as exc:
+        logger.warning("PR auto-merge failed", repo=repo_full_name, pr_number=pr_number, error=str(exc))
+        return f"Auto-merge attempted but failed: {exc}"
+
+
 def _utcnow_iso() -> str:
     from datetime import UTC, datetime
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")

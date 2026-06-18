@@ -3,7 +3,7 @@ import { getSecretJson } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { NotificationQueueMessage } from '@aigo/types';
 import { sendSlackMessage, buildBlocks } from './slack.js';
-import { postPrComment, buildPrComment } from './github.js';
+import { postPrComment, buildPrComment, createPrReview, mergePr, closePr } from './github.js';
 
 const SLACK_SECRET_ARN = process.env['SLACK_SECRET_ARN'] ?? '';
 const GITHUB_SECRET_ARN = process.env['GITHUB_SECRET_ARN'] ?? '';
@@ -45,6 +45,30 @@ export async function processRecord(record: SQSRecord): Promise<void> {
     logger.info('Slack notification sent', { channel });
   }
 
+  // REVIEW_SUBMITTED — dashboard Approve/Reject → GitHub PR formal review + merge if APPROVED
+  if (notificationType === 'REVIEW_SUBMITTED') {
+    const prUrl = payload['prUrl'] as string | undefined;
+    const decision = payload['decision'] as string | undefined;
+    const comment = payload['comment'] as string | undefined;
+    if (prUrl && decision) {
+      const githubCreds = await getSecretJson<GithubAppCredentials>(GITHUB_SECRET_ARN);
+      const githubEvent = decision === 'APPROVED' ? 'APPROVE' : 'REQUEST_CHANGES';
+      const reviewBody = buildReviewBody(decision, comment ?? '');
+      await createPrReview(prUrl, githubEvent, reviewBody, githubCreds, message.installationId);
+      logger.info('GitHub PR review submitted', { prUrl, decision: githubEvent });
+
+      // Merge PR when manually approved via Slack /approve or Dashboard
+      if (decision === 'APPROVED') {
+        await mergePr(prUrl, githubCreds, message.installationId);
+        logger.info('GitHub PR merged after manual approval', { prUrl });
+      } else if (decision === 'REJECTED') {
+        await closePr(prUrl, githubCreds, message.installationId);
+        logger.info('GitHub PR closed after rejection', { prUrl });
+      }
+    }
+    return;
+  }
+
   // GitHub PR comment for PR-related notification types
   if (PR_NOTIFICATION_TYPES.has(notificationType)) {
     const prUrl = payload['prUrl'] as string | undefined;
@@ -55,6 +79,25 @@ export async function processRecord(record: SQSRecord): Promise<void> {
       logger.info('GitHub PR comment posted', { prUrl });
     }
   }
+}
+
+function buildReviewBody(decision: string, comment: string): string {
+  if (decision === 'APPROVED') {
+    return [
+      '## ✅ AgentOps 분석 — 승인',
+      '',
+      'AIGO 대시보드에서 이 PR이 승인되었습니다.',
+      comment ? `\n> ${comment}` : '',
+    ].join('\n');
+  }
+  return [
+    '## ❌ AgentOps 분석 — 변경 요청',
+    '',
+    'AIGO 대시보드에서 이 PR에 대한 변경이 요청되었습니다.',
+    comment ? `\n> ${comment}` : '',
+    '',
+    '리포트를 확인하고 발견된 문제를 수정한 후 재검토를 요청하세요.',
+  ].join('\n');
 }
 
 function buildFallbackText(type: string, p: Record<string, unknown>): string {

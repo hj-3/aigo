@@ -73,5 +73,6 @@ export const handler = async (event: APIGatewayProxyEventV2, context: Context) =
       };
     }
   }
-  return handle(app)(event, context);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return handle(app)(event as any, context);
 };

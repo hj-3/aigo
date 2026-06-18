@@ -28,12 +28,14 @@ export async function sqsSendMessage<T extends object>(
     readonly delaySeconds?: number;
   },
 ): Promise<string> {
+  // Only include FIFO-specific parameters when explicitly provided.
+  // Standard queues reject MessageGroupId / MessageDeduplicationId entirely.
   const result = await getSqsClient().send(
     new SendMessageCommand({
       QueueUrl: queueUrl,
       MessageBody: JSON.stringify(payload),
-      MessageGroupId: options?.messageGroupId,
-      MessageDeduplicationId: options?.messageDeduplicationId ?? randomUUID(),
+      ...(options?.messageGroupId !== undefined ? { MessageGroupId: options.messageGroupId } : {}),
+      ...(options?.messageDeduplicationId !== undefined ? { MessageDeduplicationId: options.messageDeduplicationId } : {}),
       DelaySeconds: options?.delaySeconds,
     }),
   );

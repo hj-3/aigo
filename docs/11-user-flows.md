@@ -234,54 +234,73 @@ PR #27 클릭 → 리포트 상세
 
 ---
 
+## Flow 2b: 자동 머지 (리스크 임계값 이하)
+
+```
+분석 완료 (merge_recommendation = APPROVE / riskLevel = LOW)
+  ↓
+[Orchestrator] auto_merge_pr 호출
+  1. org.approvalRequired 확인 → true 이면 스킵 (수동 승인 필수)
+  2. org.riskThreshold 확인 — Settings 페이지에서 설정된 문자열 수준:
+       NONE     → 자동 머지 없음 (threshold = -1)
+       LOW      → risk_score < 20 일 때 자동 머지
+       MEDIUM   → risk_score < 40 일 때 자동 머지
+       HIGH     → risk_score < 75 일 때 자동 머지 (기본값)
+       CRITICAL → 항상 자동 머지 (threshold = 100)
+  3. risk_score ≤ threshold → GitHub PR 자동 머지
+     PUT /repos/{owner}/{repo}/pulls/{prNumber}/merge
+  4. 조건 불충족 시 → 스킵 (Slack 알림에서 /approve 안내)
+```
+
+> **구현 상세**: `riskThreshold`는 DDB Organizations 테이블에 문자열(`"HIGH"` 등)로 저장됨.  
+> `tools/github_tools.py`의 `_threshold_map` dict로 숫자 비교값으로 변환:  
+> `{"NONE": -1, "LOW": 19, "MEDIUM": 39, "HIGH": 74, "CRITICAL": 100}`
+
 ## Flow 3: 승인 / 거절
 
 ### 3-1. 승인 (Approve)
 
 ```
 리뷰어: Dashboard → 리포트 상세 → [Approve] 클릭
+  또는  Slack: /approve {reportId}
   ↓
-선택적 메모 입력 (예: "위험 인지. 다음 스프린트 수정 예정")
-  ↓
-확인 클릭
-  ↓
-[approval-api Lambda]
-  1. 권한 확인 (REVIEWER 이상)
-  2. 현재 approvalStatus 확인 (이미 승인/거절이면 409)
-  3. DynamoDB: Report approvalStatus → APPROVED
-  4. DynamoDB: Approval 레코드 생성
-  5. DynamoDB: AuditLog 기록
-  6. SQS notification-queue 발행
+[dashboard-api / lightweight-worker]
+  1. DynamoDB: Report approvalStatus → APPROVED
+  2. DynamoDB: Approval 레코드 생성
+  3. SQS notification-queue 발행 (REVIEW_SUBMITTED / decision=APPROVED)
+     ※ notification-queue는 표준 큐 — FIFO 파라미터 전달 금지
 
-[notification-worker Lambda]
-  - GitHub Check Run → success
-  - Slack 알림: "PR #27 approved by 리뷰어명"
+[notification-worker Lambda v11]
+  1. GitHub PR 공식 리뷰 제출: event=APPROVE
+     POST /repos/{owner}/{repo}/pulls/{prNumber}/reviews
+  2. GitHub PR 머지: PUT /repos/{owner}/{repo}/pulls/{prNumber}/merge
+     (405/422 = 브랜치 보호 규칙으로 머지 불가 시 경고 로그만, 에러 아님)
+  3. Slack 알림 (채널 지정 시)
 
-Dashboard: 리포트 상태 → APPROVED (실시간 업데이트)
+Dashboard: 리포트 상태 → APPROVED
 ```
 
 ### 3-2. 거절 (Reject)
 
 ```
 리뷰어: Dashboard → [Reject] 클릭
+  또는  Slack: /reject {reportId}
   ↓
-거절 사유 입력 (필수):
+거절 사유 입력 (선택):
   "IAM wildcard permission은 결제 서비스에서 머지 불가. 수정 후 재요청."
   ↓
 확인 클릭
   ↓
-[approval-api Lambda]
-  1. 권한 확인
-  2. DynamoDB: Report approvalStatus → REJECTED
-  3. DynamoDB: Approval 레코드 생성 (reason 포함)
-  4. DynamoDB: AuditLog 기록
+[dashboard-api / lightweight-worker]
+  1. DynamoDB: Report approvalStatus → REJECTED
+  2. DynamoDB: Approval 레코드 생성 (comment 포함)
+  3. SQS notification-queue 발행 (REVIEW_SUBMITTED / decision=REJECTED)
 
-[notification-worker Lambda]
-  - GitHub Check Run → failure
-  - GitHub PR Comment 추가:
-    "❌ Review rejected by {리뷰어명}
-     사유: IAM wildcard permission은 머지 불가..."
-  - Slack 알림
+[notification-worker Lambda v11]
+  1. GitHub PR 공식 리뷰 제출: event=REQUEST_CHANGES
+     POST /repos/{owner}/{repo}/pulls/{prNumber}/reviews
+  2. GitHub PR 닫기: PATCH /repos/{owner}/{repo}/pulls/{prNumber}  { state: 'closed' }
+  3. Slack 알림 (채널 지정 시)
 
 Dashboard: 리포트 상태 → REJECTED
 ```
@@ -599,3 +618,107 @@ Incident 클릭 → 상세 보기
   - Agent: 프롬프트 버전, 모델 설정
   - Billing: 월간 사용량, 플랜
 ```
+
+---
+
+## 변경 이력
+
+### 2026-06-17 — Flow 2 (PR 분석): 실제 구현 흐름 반영
+
+**변경 내용**: Flow 2-1~2-3의 여러 세부 사항이 실제 구현과 다름.
+
+**2-1 github-connector 변경**:
+```
+변경 전: SQS analysis-queue 발행 시 EventBridge 경유
+변경 후: SQS aigo-analysis-queue.fifo에 직접 전송 (MessageGroupId=orgId, MessageDeduplicationId=idempotencyKey)
+```
+
+**2-2 Orchestrator 변경**:
+```
+변경 전: AgentCore Runtime 호출 + 병렬 subagent 실행 (Code/Infra/Security/Risk 각각 별도 Agent)
+변경 후: lightweight-worker → Lambda.invoke(Event) → aigo-orchestrator Lambda (단일 Strands Agent, 페르소나 순차 전환)
+
+변경 전: AgentCore Memory (Session/Repo Summary/User Pref) 조회
+변경 후: DynamoDB aigo-AgentMemory 테이블 커스텀 Memory:
+  - get_repo_memory(org_id, repo_id, limit=3)    ← 레포 과거 분석 이력
+  - get_developer_memory(org_id, author, limit=5) ← 개발자 과거 패턴
+  분석 완료 후: save_pr_analysis_memory(...)
+```
+
+**실제 Orchestrator 9+2 step 흐름**:
+```
+Step 0:  create_check_run → GitHub Check Run "pending"
+Step 1:  get_repo_memory + get_developer_memory → 컨텍스트 로드
+Step 2:  classify_personas(changedFiles) → 실행할 페르소나 결정
+  (code 항상 / infra: .tf/.yaml 포함 시 / security: 순수.md PR 아닐 시 / risk: 순수.md PR 아닐 시)
+Step 3:  Code Reviewer → search_coding_standards + 분석 → save_findings(agent_name="code-reviewer")
+Step 4:  (infra 해당 시) Infra Reviewer → search_infrastructure_standards + 분석 → save_findings(agent_name="infra-reviewer")
+Step 5:  Security Agent → search_security_standards + 분석 → save_findings(agent_name="security-agent")
+Step 6:  Risk Reviewer → search_risk_policies + 분석 → save_findings(agent_name="risk-reviewer")
+Step 7:  Risk Score 산출 → save_report(riskScore, riskLevel, mergeRecommendation, prContext)
+Step 8:  update_check_run → GitHub Check Run 결과 반영
+Step 9:  notify_analysis_complete → Slack 알림
+Step 10: post_pr_comment → GitHub PR Comment
+Step 10b: auto_merge_pr → org.approvalRequired=false + risk_score ≤ THRESHOLD_MAP[riskThreshold] 시 자동 머지
+Step 11: save_pr_analysis_memory → 미래 분析 컨텍스트 저장
+```
+
+---
+
+### 2026-06-17 — Flow 3 (승인/거절): 실제 흐름 반영
+
+**변경 내용**: 승인/거절 플로우가 단순 상태 업데이트 + 알림으로 기술되어 있으나 실제는 GitHub PR 직접 조작.
+
+**실제 Flow 3-1 (승인)**:
+```
+Dashboard [$ approve 버튼] 또는 Slack /approve {reportId}
+  ↓
+POST /reports/{reportId}/approve { decision: "APPROVED" }  (dashboard-api)
+  ↓
+[dashboard-api]:
+  1. DDB Reports.approvalStatus → APPROVED
+  2. DDB Approvals 레코드 생성
+  3. SQS aigo-notification-queue (Standard) → REVIEW_SUBMITTED 메시지 전송
+     (installationId, prUrl, decision 포함)
+  ↓
+[notification-worker v11]:
+  1. GitHub App JWT 생성 (RSA-SHA256) → Installation Token 발급
+  2. createPrReview(prUrl, 'APPROVE', body) → POST /repos/{owner}/{repo}/pulls/{n}/reviews
+  3. mergePr(prUrl, creds, installationId)  → PUT /repos/{owner}/{repo}/pulls/{n}/merge
+     (405/422: 브랜치 보호로 머지 불가 시 경고만 — 에러 아님)
+```
+
+**실제 Flow 3-2 (거절)**:
+```
+Dashboard [$ reject 버튼] 또는 Slack /reject {reportId}
+  ↓
+POST /reports/{reportId}/approve { decision: "REJECTED" }  (dashboard-api)
+  ↓
+[notification-worker v11]:
+  1. createPrReview(prUrl, 'REQUEST_CHANGES', body) → GitHub PR Review 제출
+  2. closePr(prUrl, creds, installationId)           → PATCH /repos/{owner}/{repo}/pulls/{n} { state: 'closed' }
+```
+
+**Slack /approve, /reject 경로**:
+```
+/approve {reportId} → slack-connector → aigo-command-queue.fifo → lightweight-worker
+  → report 조회(orgId 파생) → DDB Approvals 생성 → SQS notification-queue → notification-worker
+```
+
+---
+
+### 2026-06-18 — Flow 2b (자동 머지): riskThreshold 타입 변경
+
+**변경 내용**: 설정 Flow에서 `riskThreshold`는 정수가 아닌 문자열 선택값.
+
+```
+Dashboard → Settings → 자동 머지 임계값 선택:
+  NONE    → 자동 머지 완전 비활성
+  LOW     → risk_score < 20 일 때만 자동 머지
+  MEDIUM  → risk_score < 40 일 때 자동 머지
+  HIGH    → risk_score < 75 일 때 자동 머지 (기본값)
+  CRITICAL → 모든 PR 자동 머지
+```
+
+**편집 권한**: `approvalRequired = true`여도 ADMIN/OWNER는 `riskThreshold` 편집 가능 (2026-06-18 버그 수정).
+

@@ -40,7 +40,19 @@ variable "isolated_subnets" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Enable NAT Gateways (one per AZ for HA)"
+  description = "Enable NAT Gateways"
+  type        = bool
+  default     = true
+}
+
+variable "single_nat_gateway" {
+  description = "Use a single NAT Gateway for all AZs to minimize cost (reduced HA)"
+  type        = bool
+  default     = false
+}
+
+variable "enable_interface_endpoints" {
+  description = "Enable VPC Interface Endpoints (~$145/month). Set false to use NAT Gateway for AWS API calls."
   type        = bool
   default     = true
 }

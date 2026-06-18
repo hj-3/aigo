@@ -238,6 +238,11 @@ resource "aws_dynamodb_table" "org_invitations" {
     name = "GSI1SK"
     type = "S"
   }
+  # GSI2: lookup by invitationId (for public invite link resolution)
+  attribute {
+    name = "GSI2PK"
+    type = "S"
+  }
 
   ttl {
     attribute_name = "ttl"
@@ -248,6 +253,12 @@ resource "aws_dynamodb_table" "org_invitations" {
     name            = "GSI1-email-createdAt-index"
     hash_key        = "GSI1PK"
     range_key       = "GSI1SK"
+    projection_type = "ALL"
+  }
+
+  global_secondary_index {
+    name            = "GSI2-invitationId-index"
+    hash_key        = "GSI2PK"
     projection_type = "ALL"
   }
 

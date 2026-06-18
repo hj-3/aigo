@@ -105,6 +105,7 @@ resource "aws_iam_role_policy" "bedrock_kb" {
 # Ref: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/opensearchserverless_collection
 # ──────────────────────────────────────────────────────────────────────────────
 resource "aws_opensearchserverless_security_policy" "encryption" {
+  count       = var.enabled ? 1 : 0
   name        = "${local.p}-kb-enc"
   type        = "encryption"
   description = "Encryption policy for ${local.p} KB vector store"
@@ -119,6 +120,7 @@ resource "aws_opensearchserverless_security_policy" "encryption" {
 }
 
 resource "aws_opensearchserverless_security_policy" "network" {
+  count       = var.enabled ? 1 : 0
   name        = "${local.p}-kb-net"
   type        = "network"
   description = "Network policy — public required for Bedrock KB service to access AOSS"
@@ -135,6 +137,7 @@ resource "aws_opensearchserverless_security_policy" "network" {
 }
 
 resource "aws_opensearchserverless_access_policy" "bedrock_kb" {
+  count       = var.enabled ? 1 : 0
   name        = "${local.p}-kb-access"
   type        = "data"
   description = "Data access for Bedrock KB service role"
@@ -171,6 +174,7 @@ resource "aws_opensearchserverless_access_policy" "bedrock_kb" {
 }
 
 resource "aws_opensearchserverless_collection" "vectors" {
+  count       = var.enabled ? 1 : 0
   name        = local.col
   type        = "VECTORSEARCH"
   description = "${var.project} Bedrock Knowledge Base vector store"
@@ -184,12 +188,14 @@ resource "aws_opensearchserverless_collection" "vectors" {
   ]
 }
 
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Bedrock Knowledge Base — single KB, all four domains
 # kb_tools.py reads BEDROCK_KB_ID and differentiates by metadata category filter.
 # Ref: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/bedrockagent_knowledge_base
 # ──────────────────────────────────────────────────────────────────────────────
 resource "aws_bedrockagent_knowledge_base" "main" {
+  count       = var.enabled ? 1 : 0
   name        = "${local.p}-knowledge-base"
   description = "AgentOps unified Knowledge Base (coding, infrastructure, security, risk)"
   role_arn    = aws_iam_role.bedrock_kb.arn
@@ -204,7 +210,7 @@ resource "aws_bedrockagent_knowledge_base" "main" {
   storage_configuration {
     type = "OPENSEARCH_SERVERLESS"
     opensearch_serverless_configuration {
-      collection_arn    = aws_opensearchserverless_collection.vectors.arn
+      collection_arn    = aws_opensearchserverless_collection.vectors[0].arn
       vector_index_name = "${local.p}-kb-index"
       field_mapping {
         vector_field   = "embedding"
@@ -226,9 +232,9 @@ resource "aws_bedrockagent_knowledge_base" "main" {
 # Ref: https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/bedrockagent_data_source
 # ──────────────────────────────────────────────────────────────────────────────
 resource "aws_bedrockagent_data_source" "categories" {
-  for_each = local.kb_data_sources
+  for_each = var.enabled ? local.kb_data_sources : {}
 
-  knowledge_base_id = aws_bedrockagent_knowledge_base.main.id
+  knowledge_base_id = aws_bedrockagent_knowledge_base.main[0].id
   name              = "${local.p}-ds-${each.key}"
 
   data_source_configuration {

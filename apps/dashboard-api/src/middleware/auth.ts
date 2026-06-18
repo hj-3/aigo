@@ -8,6 +8,7 @@ interface JwtClaims {
   'custom:orgId': string;
   'custom:role': string;
   'custom:onboardingCompleted': string;
+  'cognito:username': string;
 }
 
 export function extractClaims(c: Context): JwtClaims | null {

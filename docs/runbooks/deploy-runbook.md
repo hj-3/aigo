@@ -1645,24 +1645,82 @@ aws dynamodb query \
 
 ## 인프라 비용 참고
 
-### Amazon OpenSearch Serverless (AOSS) — 항상 켜져있음
+### KB 벡터 검색 — S3 Vector (현재 운영 방식)
+
+> **현재 상태:** AOSS `enabled = false` — Bedrock KB + AOSS는 비활성화됨.  
+> KB 검색은 S3 JSON 인덱스 + Titan Embeddings v2 코사인 유사도로 동작.
+
+| 방식 | 월 비용 |
+|------|---------|
+| Bedrock KB + AOSS (이전) | ~$700/월 (4 OCU 고정) |
+| **S3 Vector KB (현재)** | **~$1/월** |
+
+**인덱스 구축/업데이트:**
+```bash
+python scripts/build-kb-index.py
+# docs/kb/**/*.md → Titan Embeddings → s3://aigo-kb/vector-index/index.json
+```
+
+상세 내용: [docs/impl/kb-s3-vector.md](../impl/kb-s3-vector.md)
+
+### Amazon OpenSearch Serverless (AOSS) — 비활성화됨
 
 > **중요:** AOSS Vector Search 컬렉션은 **일시 중지(pause)가 불가능**하다.  
-> 문서가 하나도 없어도 최소 OCU 비용이 발생한다.
+> 현재 `enabled = false`로 비활성화 — 과금 없음.
 
-| 항목 | 비용 |
+| 항목 | 비용 (활성화 시) |
 |------|------|
 | 최소 OCU | 인덱싱 2 OCU + 검색 2 OCU = 4 OCU |
 | OCU 단가 | $0.24/시간 |
 | **월 고정 비용** | **4 × $0.24 × 24h × 30일 ≈ $691** |
-| 비고 | 실제 검색/인덱싱 사용량에 따라 추가 과금 가능 |
 
-**비용 절감 옵션 (개발/스테이징):**
-- Aurora Serverless v2 + pgvector: 유휴 시 0 ACU 자동 중단 → 월 $0~$30
-- Bedrock KB에서 Aurora PostgreSQL 벡터 스토어 지원 (`aurora_serverless_v2_configuration`)
-- 단, Aurora로 변경 시 `modules/bedrock-kb/main.tf` 내 `opensearch_serverless_configuration` 블록을 `rds_configuration` 블록으로 교체 필요
+**현재 설정 (prod):** `enabled = false` — 월 $0.
 
-**현재 설정 (prod):** OpenSearch Serverless — 항상 켜져있음, 월 ~$700 고정.
+---
+
+## 현재 Lambda 버전 현황 (2026-06-16 기준)
+
+| Lambda 함수 | 현재 버전 | 주요 변경 |
+|-------------|---------|---------|
+| `aigo-orchestrator` | v14 | S3 Vector KB (Titan Embeddings, v14), LLM 페르소나 선택 Step 0c (v13) |
+| `aigo-lightweight-worker` | v22 | SQS retry ConditionalCheckFailed 수정 |
+| `aigo-dashboard-api` | v31 | SES try-catch 추가 (non-fatal), esbuild 번들 수정 |
+| `aigo-github-connector` | latest | EventBridge aigo-bus PutEvents 전환 |
+| `aigo-notification-worker` | latest | REVIEW_SUBMITTED → GitHub formal review |
+| `aigo-post-confirmation` | latest | Cognito post-confirmation trigger |
+
+> **최신 버전 (2026-06-18 기준)**: `docs/impl/system-status.md` §5 참조.
+
+| Lambda 함수 | 최신 버전 (2026-06-18) | 누적 주요 변경 |
+|-------------|----------------------|-------------|
+| `aigo-orchestrator` | **v23** | riskThreshold 문자열 dict 매핑, auto_merge_pr, AgentRuns 이중 기록 |
+| `aigo-lightweight-worker` | **v28** | aws-clients dist 재빌드(SQS 표준큐 버그), command/incident ESM 추가 |
+| `aigo-dashboard-api` | **v42** | findings JOB# 쿼리 키, approve 단일 엔드포인트, settings riskThreshold |
+| `aigo-github-connector` | **v25** | EventBridge 제거 → SQS 직접 전송, MessageGroupId=orgId |
+| `aigo-notification-worker` | **v11** | REJECTED 시 closePr 추가, APPROVED 시 mergePr |
+
+---
+
+## esbuild 번들 설정 (중요)
+
+모든 Node.js Lambda의 `package.json` bundle 스크립트에서 `--external:@aws-sdk/*` 제거됨.
+
+**이전 (문제 있음):**
+```json
+"bundle": "esbuild src/index.ts --bundle ... --external:@aws-sdk/*"
+```
+
+**현재 (올바름):**
+```json
+"bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js"
+```
+
+**이유:** `@aws-sdk/client-dynamodb@3.700.0`이 `@smithy/core`를 peer dependency로 요구하는데,  
+`--external:@aws-sdk/*`로 번들에서 제외하면 Lambda 런타임에서 `@smithy/core` 없이 실행 중  
+`ImportModuleError`가 발생한다. esbuild가 전부 번들하면 단일 `dist/index.js` (~3.6MB, zip ~600KB)로  
+의존성 문제가 사라진다.
+
+CI/CD (`scripts/deploy-lambda.sh`) 는 `dist/index.js`만 zip → 영향 없음.
 
 ---
 

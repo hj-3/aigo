@@ -305,6 +305,12 @@ resource "aws_iam_role_policy" "lambda_api" {
           "cognito-idp:ListUsersInGroup"
         ]
         Resource = "arn:aws:cognito-idp:${var.aws_region}:${var.aws_account_id}:userpool/*"
+      },
+      {
+        Sid      = "SESSend"
+        Effect   = "Allow"
+        Action   = ["ses:SendEmail", "ses:SendRawEmail"]
+        Resource = "*"
       }
     ]
   })
@@ -465,7 +471,7 @@ resource "aws_iam_role_policy" "lambda_orchestrator" {
         ]
         Resource = [
           "arn:aws:bedrock:*::foundation-model/anthropic.claude-*",
-          "arn:aws:bedrock:::foundation-model/*",
+          "arn:aws:bedrock:*::foundation-model/amazon.titan-embed-*",
           "arn:aws:bedrock:${var.aws_region}:${var.aws_account_id}:inference-profile/*"
         ]
       },

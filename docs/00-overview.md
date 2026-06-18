@@ -130,3 +130,33 @@ GitHub PR, Slack 명령, 대시보드 액션, AWS 운영 이벤트를 입력으�
 | 5 | MCP Tools (9개 Tool 그룹) |
 | 6 | Dashboard (React/TypeScript, 6개 도메인) |
 | 7 | Full Workflow 통합 (E2E 테스트, Memory 검증) |
+
+---
+
+## 변경 이력
+
+### 2026-06-12 — Tool 격리 원칙 실제 구현 방식 반영
+
+**변경 내용**: 아키텍처 원칙의 "Tool 격리" 항목에 기술된 "AgentCore Gateway Tool을 통해서만 외부 접근" 방식은 초기 설계안으로, 실제 구현에서는 **Strands SDK의 `@tool` 데코레이터**로 Python 함수를 Lambda 내부에서 직접 호출하는 방식으로 전환됨.
+
+**이유**: AgentCore Gateway + MCP 서버 구조는 네트워크 왕복·별도 인프라·복잡한 디버깅이 수반됨. Strands `@tool` in-process 호출은 마이크로초 수준의 지연, 단일 Lambda 배포 단위, 단일 로그 스트림으로 추적 가능 — 이 프로젝트에서 tool 공유 요구가 없어 분리 이점이 없음.
+
+**세부 변경**:
+- `pr_tools`, `kb_tools`, `subagent_tools`, `ddb_tools`, `slack_tools`, `github_tools` 등 모든 tool이 Python `@tool` 함수로 `agents/orchestrator/src/` 안에서 직접 실행
+- AgentCore Gateway, MCP 서버 인프라 없음 (`docs/impl/system-status.md` §3 참조)
+
+### 2026-06-12 — dashboard-cmd-connector 통합
+
+**변경 내용**: 입력 채널 표의 `dashboard-cmd-connector` Lambda는 별도로 배포되지 않음. Dashboard의 승인/거절/Fix 요청은 `dashboard-api` Lambda의 REST 엔드포인트(`POST /reports/{id}/approve`, `POST /fix`)를 통해 직접 처리.
+
+**이유**: 단순성 — dashboard 액션은 이미 JWT 인증된 API GW → dashboard-api 경로로 처리 가능. 별도 Lambda 불필요.
+
+### 2026-06-15 — 구현 Phase 실제 내용 반영
+
+**변경 내용**: "구현 Phase" 표의 Phase 4·5 설명이 초기 설계와 다름.
+
+| Phase | 원본 설명 | 실제 구현 |
+|-------|---------|---------|
+| 4 | AgentCore + Strands Runtime (7개 Agent, Memory, Gateway) | Orchestrator Lambda (Strands @tool in-process, 4 페르소나) + Incident/Fix Agent (Bedrock AgentCore별도) + DynamoDB-기반 커스텀 Memory |
+| 5 | MCP Tools (9개 Tool 그룹) | Strands @tool 함수 그룹 (kb/ddb/slack/github/subagent/patch/repo/pr/aws_observability) — MCP 아님 |
+

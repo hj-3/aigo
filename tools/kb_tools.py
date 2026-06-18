@@ -1,11 +1,22 @@
 """
-Knowledge Base Tools — search Bedrock Knowledge Base for coding standards,
-security policies, and infrastructure guidelines.
+Knowledge Base Tools — S3 Vector Search (Titan Embeddings v2 + cosine similarity).
+
+Architecture:
+  - KB documents embedded offline (scripts/build-kb-index.py)
+  - Index stored as JSON at S3: KB_BUCKET/vector-index/index.json
+  - Lambda cold start: download index → cache in /tmp
+  - Query time: embed query via Titan → cosine similarity → top-5 chunks
+
+Cost: ~$0.00002/1K tokens (Titan Embeddings) — effectively $0-3/month vs $700/month for AOSS.
 """
 
 from __future__ import annotations
 
+import json
+import math
 import os
+import tempfile
+import time
 from typing import Any
 
 import boto3
@@ -14,51 +25,106 @@ from strands import tool
 
 logger = structlog.get_logger(__name__)
 
+_INDEX_CACHE: list[dict] | None = None
+_INDEX_CACHE_TS: float = 0
+_INDEX_CACHE_TTL = 3600  # re-download once per Lambda container lifetime hour
 
-def _kb_client() -> Any:
+
+def _bedrock_runtime() -> Any:
     return boto3.client(
-        "bedrock-agent-runtime",
+        "bedrock-runtime",
         region_name=os.environ.get("AWS_REGION", "ap-northeast-2"),
     )
 
 
-def _get_kb_id() -> str | None:
-    return os.environ.get("BEDROCK_KB_ID") or None
+def _s3_client() -> Any:
+    return boto3.client("s3", region_name=os.environ.get("AWS_REGION", "ap-northeast-2"))
 
 
-def _search_kb(query: str, filter_tag: str | None = None) -> str:
-    kb_id = _get_kb_id()
-    if not kb_id:
-        logger.warning("BEDROCK_KB_ID not set — KB search skipped")
-        return "Knowledge Base not configured. Proceeding with analysis using built-in knowledge only."
+def _load_index() -> list[dict]:
+    global _INDEX_CACHE, _INDEX_CACHE_TS
+    now = time.monotonic()
+    if _INDEX_CACHE is not None and now - _INDEX_CACHE_TS < _INDEX_CACHE_TTL:
+        return _INDEX_CACHE
+
+    bucket = os.environ.get("KB_BUCKET", "aigo-kb")
+    key = os.environ.get("KB_INDEX_KEY", "vector-index/index.json")
 
     try:
-        params: dict = {
-            "knowledgeBaseId": kb_id,
-            "retrievalQuery": {"text": query},
-            "retrievalConfiguration": {
-                "vectorSearchConfiguration": {
-                    "numberOfResults": 5,
-                    **({"filter": {"equals": {"key": "category", "value": filter_tag}}} if filter_tag else {}),
-                }
-            },
-        }
-        response = _kb_client().retrieve(**params)
-        results = response.get("retrievalResults", [])
-        if not results:
-            return "No relevant guidelines found in Knowledge Base."
-
-        chunks = []
-        for r in results:
-            content = r.get("content", {}).get("text", "")
-            location = r.get("location", {}).get("s3Location", {}).get("uri", "")
-            score = r.get("score", 0)
-            chunks.append(f"[Source: {location}, Relevance: {score:.2f}]\n{content}")
-
-        return "\n\n---\n\n".join(chunks)
+        resp = _s3_client().get_object(Bucket=bucket, Key=key)
+        data = json.loads(resp["Body"].read())
+        _INDEX_CACHE = data
+        _INDEX_CACHE_TS = now
+        logger.info("KB index loaded", chunks=len(data), bucket=bucket, key=key)
+        return data
     except Exception as exc:
-        logger.warning("KB search failed — continuing without KB context", error=str(exc))
-        return f"Knowledge Base search failed ({exc}). Proceeding with built-in knowledge only."
+        logger.warning("Failed to load KB index from S3", error=str(exc), bucket=bucket, key=key)
+        return []
+
+
+def _embed(text: str) -> list[float] | None:
+    try:
+        resp = _bedrock_runtime().invoke_model(
+            modelId="amazon.titan-embed-text-v2:0",
+            body=json.dumps({"inputText": text[:8000], "dimensions": 1024, "normalize": True}),
+            contentType="application/json",
+            accept="application/json",
+        )
+        body = json.loads(resp["body"].read())
+        return body.get("embedding")
+    except Exception as exc:
+        logger.warning("Titan embedding failed", error=str(exc))
+        return None
+
+
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+def _search(query: str, category: str | None = None, top_k: int = 5) -> str:
+    index = _load_index()
+    if not index:
+        logger.warning("KB index empty or unavailable — skipping KB search")
+        return "Knowledge Base not available. Proceeding with built-in knowledge only."
+
+    query_vec = _embed(query)
+    if query_vec is None:
+        return "Knowledge Base embedding failed. Proceeding with built-in knowledge only."
+
+    # Filter by category if requested
+    candidates = [
+        c for c in index
+        if category is None or c.get("metadata", {}).get("category") == category
+    ] if category else index
+
+    if not candidates:
+        return f"No KB documents found for category '{category}'."
+
+    # Score all candidates
+    scored = sorted(
+        [{"chunk": c, "score": _cosine_similarity(query_vec, c["embedding"])} for c in candidates],
+        key=lambda x: x["score"],
+        reverse=True,
+    )[:top_k]
+
+    # Filter out low-relevance results
+    relevant = [s for s in scored if s["score"] >= 0.5]
+    if not relevant:
+        return "No highly relevant guidelines found. Proceeding with built-in knowledge."
+
+    chunks = []
+    for s in relevant:
+        meta = s["chunk"].get("metadata", {})
+        source = meta.get("source", "KB")
+        text = s["chunk"].get("text", "")
+        chunks.append(f"[Source: {source}, Relevance: {s['score']:.2f}]\n{text}")
+
+    return "\n\n---\n\n".join(chunks)
 
 
 @tool
@@ -73,7 +139,7 @@ def search_coding_standards(query: str) -> str:
         Relevant coding standards and guidelines
     """
     logger.info("Searching coding standards KB", query=query)
-    return _search_kb(query, filter_tag="coding_standards")
+    return _search(query, category="coding_standards")
 
 
 @tool
@@ -88,7 +154,7 @@ def search_infrastructure_standards(query: str) -> str:
         Relevant infrastructure standards and AWS guidance
     """
     logger.info("Searching infrastructure standards KB", query=query)
-    return _search_kb(query, filter_tag="infrastructure")
+    return _search(query, category="infrastructure")
 
 
 @tool
@@ -103,7 +169,7 @@ def search_security_standards(query: str) -> str:
         Relevant security standards and compliance guidelines
     """
     logger.info("Searching security standards KB", query=query)
-    return _search_kb(query, filter_tag="security")
+    return _search(query, category="security")
 
 
 @tool
@@ -118,4 +184,4 @@ def search_risk_policies(query: str) -> str:
         Relevant risk policies and deployment guidelines
     """
     logger.info("Searching risk policies KB", query=query)
-    return _search_kb(query, filter_tag="risk")
+    return _search(query, category="risk")

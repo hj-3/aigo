@@ -60,16 +60,22 @@ resource "aws_route_table_association" "public" {
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Elastic IPs + NAT Gateways (one per AZ for HA)
+# Elastic IPs + NAT Gateways
+# single_nat_gateway=true: 1 NAT GW in first AZ (cost-optimised, no AZ HA)
+# single_nat_gateway=false: 1 NAT GW per AZ (full HA)
 # ──────────────────────────────────────────────────────────────────────────────
+locals {
+  nat_count = var.enable_nat_gateway ? (var.single_nat_gateway ? 1 : length(var.azs)) : 0
+}
+
 resource "aws_eip" "nat" {
-  count  = var.enable_nat_gateway ? length(var.azs) : 0
+  count  = local.nat_count
   domain = "vpc"
   tags   = merge(local.common_tags, { Name = "${local.name_prefix}-nat-eip-${var.azs[count.index]}" })
 }
 
 resource "aws_nat_gateway" "this" {
-  count         = var.enable_nat_gateway ? length(var.azs) : 0
+  count         = local.nat_count
   allocation_id = aws_eip.nat[count.index].id
   subnet_id     = aws_subnet.public[count.index].id
   depends_on    = [aws_internet_gateway.this]
@@ -101,7 +107,7 @@ resource "aws_route" "private_nat" {
   count                  = var.enable_nat_gateway ? length(var.azs) : 0
   route_table_id         = aws_route_table.private[count.index].id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.this[count.index].id
+  nat_gateway_id         = var.single_nat_gateway ? aws_nat_gateway.this[0].id : aws_nat_gateway.this[count.index].id
 }
 
 resource "aws_route_table_association" "private" {
@@ -268,7 +274,7 @@ resource "aws_vpc_endpoint" "dynamodb" {
 # Interface VPC Endpoints
 # ──────────────────────────────────────────────────────────────────────────────
 locals {
-  interface_endpoints = {
+  interface_endpoints = var.enable_interface_endpoints ? {
     ecr_api        = "com.amazonaws.${var.region}.ecr.api"
     ecr_dkr        = "com.amazonaws.${var.region}.ecr.dkr"
     logs           = "com.amazonaws.${var.region}.logs"
@@ -280,7 +286,7 @@ locals {
     ssm            = "com.amazonaws.${var.region}.ssm"
     xray           = "com.amazonaws.${var.region}.xray"
     bedrock        = "com.amazonaws.${var.region}.bedrock-runtime"
-  }
+  } : {}
 }
 
 resource "aws_vpc_endpoint" "interface" {

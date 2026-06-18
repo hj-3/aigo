@@ -50,10 +50,9 @@ https://api.seolphung.com/auth/slack/callback
 
 ---
 
-## 추가 설정 3 — Slash Command URL 설정 (미완료)
+## 추가 설정 3 — Slash Command URL 설정 ✅ 완료 (2026-06-18)
 
-`/approve`, `/reject`, `/investigate` 명령어 수신 Lambda는 배포되어 있으나
-Slack App에 URL이 등록되지 않은 상태입니다.
+`/approve`, `/reject`, `/investigate` 명령어가 Slack App에 등록되었습니다.
 
 API Gateway 라우트: `POST /webhooks/slack` → `aigo-slack-connector` Lambda
 
@@ -96,3 +95,25 @@ aws lambda update-function-configuration \
 ```
 
 > 채널 ID는 Slack에서 채널 우클릭 → "채널 세부정보 보기" → 하단에서 확인 (`C0XXXXXXX` 형식).
+
+---
+
+## 변경 이력
+
+### 2026-06-18 — Slash Command 등록 완료
+
+**변경 내용**: "추가 설정 3" 항목이 완료됨. Slack App에 `/approve`, `/reject`, `/investigate` Slash Command 등록 및 재설치 완료.
+
+**현재 상태**:
+- `/approve {reportId}` → `POST https://api.seolphung.com/webhooks/slack` → slack-connector → command-queue.fifo → lightweight-worker → DDB + notification-worker → GitHub PR 머지
+- `/reject {reportId}` → 같은 경로 → GitHub PR 닫기
+- `/investigate` → lightweight-worker에서 현재 "not handled here" skip (CloudWatch Alarm → incident-queue 경로가 정식 경로)
+
+**남은 과제**: `/investigate` Slack 명령 처리 — `lightweight-worker`의 `processCommand`에 INVESTIGATE case 추가 필요.
+
+### 2026-06-17 — Slack /approve → GitHub 머지 플로우 확인
+
+**변경 내용**: `aigo-command-queue.fifo`에 `lightweight-worker` Lambda ESM이 추가됨 (Terraform apply, 2026-06-16). Slack `/approve` 명령 처리 흐름이 완성됨.
+
+**이전 문제**: command-queue에 Lambda ESM이 없어 Slack 명령이 큐에 쌓이기만 하고 처리되지 않았음.
+

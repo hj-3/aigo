@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
+import { SSMClient, PutParameterCommand } from '@aws-sdk/client-ssm';
 import { ddbGet, ddbUpdate, Config } from '@aigo/aws-clients';
 import { requireAuth, requireRole, extractClaims } from '../middleware/auth.js';
+
+const ssm = new SSMClient({ region: process.env['AWS_REGION'] ?? 'ap-northeast-2' });
 
 export const settingsRouter = new Hono();
 
@@ -67,6 +70,18 @@ settingsRouter.patch('/', requireRole('ADMIN'), async (c) => {
     ExpressionAttributeValues: expressionAttributeValues,
     ConditionExpression: 'attribute_exists(PK)',
   });
+
+  // Sync slackChannel to SSM so the orchestrator can find it
+  if ('slackChannel' in body && typeof body['slackChannel'] === 'string' && body['slackChannel']) {
+    const ssmPath = process.env['SSM_SLACK_TOKEN_PATH'] ?? '/aigo/integrations/slack';
+    await ssm.send(new PutParameterCommand({
+      Name: `${ssmPath}/${orgId}/channel-id`,
+      Value: body['slackChannel'] as string,
+      Type: 'String',
+      Overwrite: true,
+      Description: `Slack notification channel for org ${orgId}`,
+    })).catch(() => { /* non-fatal: SSM might not be accessible */ });
+  }
 
   return c.json({ ok: true, updatedAt: now });
 });

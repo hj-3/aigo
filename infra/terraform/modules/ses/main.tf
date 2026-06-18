@@ -42,7 +42,7 @@ resource "aws_route53_record" "ses_spf" {
 resource "aws_ses_domain_mail_from" "main" {
   domain           = aws_ses_domain_identity.main.domain
   mail_from_domain = "mail.${var.domain_name}"
-  behavior_on_mx_failure = "REJECT_MESSAGE"
+  behavior_on_mx_failure = "RejectMessage"
 }
 
 # MX record for custom MAIL FROM domain (SES bounce/feedback endpoint)

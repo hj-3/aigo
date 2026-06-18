@@ -571,3 +571,72 @@ Incident 상세 (RCA 포함).
 | Agent 분석 (비동기) | - | - | 5분 |
 | Fix 생성 (비동기) | - | - | 15분 |
 | Incident 조사 (비동기) | - | - | 5분 |
+
+---
+
+## 변경 이력
+
+### 2026-06-15 — approve/reject 단일 엔드포인트 통합
+
+**변경 내용**: `POST /reports/{reportId}/approve`와 `POST /reports/{reportId}/reject`가 별도 라우트로 설계되어 있으나, 실제 구현은 **`POST /reports/{reportId}/approve` 단일 엔드포인트**가 `decision` 필드로 양쪽 처리.
+
+```json
+// 승인
+{ "decision": "APPROVED", "comment": "LGTM" }
+
+// 거절
+{ "decision": "REJECTED", "comment": "보안 취약점 수정 필요" }
+```
+
+**사이드 이펙트 (실제)**:
+- DynamoDB `aigo-Reports.approvalStatus` 업데이트
+- DynamoDB `aigo-Approvals` 레코드 생성
+- `aigo-notification-queue` (Standard)에 `REVIEW_SUBMITTED` 메시지 전송 (FIFO 파라미터 없음)
+- `notification-worker`가 메시지 소비:
+  - GitHub PR Review 제출 (`APPROVE` 또는 `REQUEST_CHANGES`)
+  - APPROVED 시: `PUT /repos/{owner}/{repo}/pulls/{n}/merge` (PR 머지)
+  - REJECTED 시: `PATCH /repos/{owner}/{repo}/pulls/{n}` `{state: 'closed'}` (PR 닫기)
+
+---
+
+### 2026-06-15 — 별도 API Lambda 미배포 (통합 dashboard-api)
+
+**변경 내용**: 문서에 기재된 `approval-api`, `fix-api`, `settings-api`는 별도 Lambda로 배포되지 않음. 모두 `aigo-dashboard-api` (Hono 단일 Lambda)의 라우트.
+
+**실제 라우트 (dashboard-api 처리)**:
+
+| 메서드 | 경로 | 설명 |
+|-------|------|------|
+| POST | /reports/{id}/approve | 승인·거절 (decision 필드) |
+| POST | /fix | Fix 요청 생성 |
+| GET | /fix | Fix 목록 (`?status=` 필터) |
+| GET | /fix/{fixId} | Fix 상세 |
+| GET | /settings | 조직 설정 |
+| PATCH | /settings | 조직 설정 변경 (ADMIN 이상, slackChannel → SSM 동기화) |
+| DELETE | /reports/{id} | 리포트 삭제 (soft-delete, ADMIN 이상) |
+| GET | /jobs/active | IN_PROGRESS + PENDING 잡 병합 조회 (3~5초 폴링) |
+| GET | /jobs/agent-runs | 특정 Job의 Agent 실행 목록 |
+| GET | /integrations | GitHub/Slack 연동 상태 |
+| DELETE | /integrations/slack | Slack 연결 해제 |
+| GET | /team/members | 팀원 목록 |
+| POST | /team/invite | 초대 발송 |
+| GET | /team/invite/{token} | 초대 토큰 조회 (no auth — 공개 라우트) |
+| POST | /team/accept-invite | 초대 수락 |
+
+---
+
+### 2026-06-15 — Settings riskThreshold 타입
+
+**변경 내용**: `PATCH /settings`의 `riskThreshold` 필드 타입이 정수가 아닌 **문자열**.
+
+```json
+// 가능한 값
+{ "riskThreshold": "NONE" }   // 자동 머지 없음
+{ "riskThreshold": "LOW" }    // risk_score < 20
+{ "riskThreshold": "MEDIUM" } // risk_score < 40
+{ "riskThreshold": "HIGH" }   // risk_score < 75 (기본값)
+{ "riskThreshold": "CRITICAL" } // 모두 자동 머지
+```
+
+내부 임계값 변환: `orchestrator`의 `THRESHOLD_MAP = {'NONE': -1, 'LOW': 19, 'MEDIUM': 39, 'HIGH': 74, 'CRITICAL': 100}`.
+

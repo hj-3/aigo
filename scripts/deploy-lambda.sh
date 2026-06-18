@@ -8,17 +8,26 @@ FUNCTION_NAME="$2"
 ALIAS_NAME="live"
 CANARY_WEIGHT=0.1  # 10% canary traffic (AWS Lambda alias weight: 0.0–1.0)
 
-# Determine bundle path based on package location
+# Determine bundle path and package filter based on package location
 if [[ "$PACKAGE_NAME" == connector-* ]]; then
   BUNDLE_PATH="connectors/${PACKAGE_NAME#connector-}/dist/index.js"
+  PKG_FILTER="@aigo/connector-${PACKAGE_NAME#connector-}"
 elif [[ "$PACKAGE_NAME" == "worker-lightweight" ]]; then
   BUNDLE_PATH="workers/lightweight/dist/index.js"
+  PKG_FILTER="@aigo/worker-lightweight"
+elif [[ "$PACKAGE_NAME" == "worker-notification" ]]; then
+  BUNDLE_PATH="workers/notification/dist/index.js"
+  PKG_FILTER="@aigo/notification-worker"
 elif [[ "$PACKAGE_NAME" == "dashboard-api" ]]; then
   BUNDLE_PATH="apps/dashboard-api/dist/index.js"
+  PKG_FILTER="@aigo/dashboard-api"
 else
   echo "Unknown package: $PACKAGE_NAME" >&2
   exit 1
 fi
+
+echo "🔨 Bundling $PKG_FILTER..."
+pnpm -F "$PKG_FILTER" bundle
 
 echo "📦 Packaging $PACKAGE_NAME from $BUNDLE_PATH..."
 cd "$(dirname "$BUNDLE_PATH")" && zip -q deployment.zip "$(basename "$BUNDLE_PATH")"

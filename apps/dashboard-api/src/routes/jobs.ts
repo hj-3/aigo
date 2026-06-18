@@ -23,6 +23,41 @@ jobsRouter.get('/', async (c) => {
   return c.json(items);
 });
 
+// GET /jobs/active — PENDING + IN_PROGRESS jobs combined (for dashboard live view)
+jobsRouter.get('/active', async (c) => {
+  const claims = extractClaims(c)!;
+  const orgId = claims['custom:orgId'];
+
+  const [pending, inProgress] = await Promise.all([
+    ddbQuery({
+      TableName: Config.tableName('AnalysisJobs'),
+      IndexName: 'GSI2-orgStatus-createdAt-index',
+      KeyConditionExpression: 'GSI2PK = :pk',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}#PENDING` },
+      ScanIndexForward: false,
+      Limit: 20,
+    }),
+    ddbQuery({
+      TableName: Config.tableName('AnalysisJobs'),
+      IndexName: 'GSI2-orgStatus-createdAt-index',
+      KeyConditionExpression: 'GSI2PK = :pk',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}#IN_PROGRESS` },
+      ScanIndexForward: false,
+      Limit: 20,
+    }),
+  ]);
+
+  const combined = [...inProgress.items, ...pending.items]
+    .sort((a, b) => {
+      const aTime = (a as Record<string, string>)['createdAt'] ?? '';
+      const bTime = (b as Record<string, string>)['createdAt'] ?? '';
+      return bTime.localeCompare(aTime);
+    })
+    .slice(0, 10);
+
+  return c.json(combined);
+});
+
 jobsRouter.get('/agent-runs', async (c) => {
   const claims = extractClaims(c)!;
   const orgId = claims['custom:orgId'];

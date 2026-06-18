@@ -1,9 +1,12 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { ddbPut, ddbGet, ddbQuery, sqsSendMessage, getSecretJson, Config } from '@aigo/aws-clients';
+import { SQSClient, SendMessageCommand } from '@aws-sdk/client-sqs';
+import { ddbPut, ddbGet, ddbQuery, ddbUpdate, getSecretJson, Config } from '@aigo/aws-clients';
 import { createContextLogger } from '@aigo/logger';
 import type { GitHubPRWebhookPayload } from '@aigo/types';
 import { validateGitHubSignature, extractRawBody } from './validator.js';
 import { randomUUID } from 'node:crypto';
+
+const sqs = new SQSClient({ region: process.env['AWS_REGION'] ?? 'ap-northeast-2' });
 
 const ULID_PLACEHOLDER = (): string => {
   return Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 9).toUpperCase();
@@ -21,6 +24,19 @@ interface IntegrationRecord {
   orgId: string;
   installationId: string;
   status: string;
+}
+
+interface InstallationPayload {
+  action: 'created' | 'deleted' | 'suspend' | 'unsuspend';
+  installation: {
+    id: number;
+    account: { login: string; id: number; type: string };
+  };
+}
+
+interface OrgRecord {
+  PK: string;
+  orgId: string;
 }
 
 interface RepoRecord {
@@ -61,6 +77,10 @@ export async function handleGitHubWebhook(
 
   if (eventType === 'ping') {
     return { statusCode: 200, body: '{"ok":true}' };
+  }
+
+  if (eventType === 'installation') {
+    return handleInstallation(JSON.parse(extractRawBody(event)) as InstallationPayload, logger);
   }
 
   if (eventType !== 'pull_request') {
@@ -205,12 +225,18 @@ export async function handleGitHubWebhook(
     throw err;
   }
 
-  // ── 7. Publish to SQS analysis-queue ──────────────────────────────────────
-  const sqsPayload = {
+  // ── 7. Publish directly to SQS analysis-queue ─────────────────────────────
+  const sqsQueueUrl = process.env['SQS_ANALYSIS_QUEUE_URL'];
+  if (!sqsQueueUrl) {
+    logger.error('SQS_ANALYSIS_QUEUE_URL env var missing');
+    return { statusCode: 500, body: '{"error":"config_error"}' };
+  }
+
+  const eventDetail = {
     type: 'ANALYSIS_REQUESTED',
     messageId: randomUUID(),
     timestamp: now,
-    source: 'github' as const,
+    source: 'github',
     jobId,
     orgId,
     repoId,
@@ -221,11 +247,109 @@ export async function handleGitHubWebhook(
     prContext: jobItem.prContext,
   };
 
-  await sqsSendMessage(Config.sqs.analysisQueueUrl, sqsPayload, {
-    messageGroupId: `${orgId}#${repoId}`,
-    messageDeduplicationId: idempotencyKey,
-  });
+  await sqs.send(new SendMessageCommand({
+    QueueUrl: sqsQueueUrl,
+    MessageBody: JSON.stringify(eventDetail),
+    MessageGroupId: orgId,
+    MessageDeduplicationId: jobId,
+  }));
 
   logger.info('Analysis job created', { jobId, prNumber: payload.number, orgId, repoId });
   return { statusCode: 200, body: JSON.stringify({ jobId }) };
+}
+
+async function handleInstallation(
+  payload: InstallationPayload,
+  logger: ReturnType<typeof import('@aigo/logger').createContextLogger>,
+): Promise<APIGatewayProxyResultV2> {
+  const installationId = String(payload.installation.id);
+  const accountLogin = payload.installation.account.login;
+  const now = new Date().toISOString();
+
+  if (payload.action === 'created') {
+    const orgResult = await ddbQuery<OrgRecord>({
+      TableName: Config.tableName('Organizations'),
+      IndexName: 'GSI1-orgId-provider-index',
+      KeyConditionExpression: 'GSI1PK = :pk',
+      ExpressionAttributeValues: { ':pk': `GITHUB_LOGIN#${accountLogin}` },
+      Limit: 1,
+    });
+
+    if (orgResult.items.length === 0) {
+      await ddbPut({
+        TableName: Config.tableName('Integrations'),
+        Item: {
+          PK: `PENDING_INSTALLATION#${installationId}`,
+          SK: 'GITHUB',
+          installationId,
+          accountLogin,
+          status: 'PENDING_ORG',
+          createdAt: now,
+          GSI2PK: `INSTALLATION#${installationId}`,
+          ttl: Math.floor(Date.now() / 1000) + 86400 * 30,
+        },
+      });
+      logger.info('Stored pending installation (org not found)', { installationId, accountLogin });
+      return { statusCode: 200, body: '{"status":"pending_org"}' };
+    }
+
+    const org = orgResult.items[0];
+    if (!org) {
+      return { statusCode: 200, body: '{"status":"pending_org"}' };
+    }
+    const orgId = org.orgId;
+
+    await ddbPut({
+      TableName: Config.tableName('Integrations'),
+      Item: {
+        PK: `ORG#${orgId}`,
+        SK: 'INTEGRATION#GITHUB',
+        orgId,
+        type: 'GITHUB',
+        installationId,
+        accountLogin,
+        status: 'ACTIVE',
+        createdAt: now,
+        updatedAt: now,
+        GSI1PK: `ORG#${orgId}`,
+        GSI1SK: 'INTEGRATION#GITHUB',
+        GSI2PK: `INSTALLATION#${installationId}`,
+      },
+    });
+
+    await ddbUpdate({
+      TableName: Config.tableName('Organizations'),
+      Key: { PK: org.PK, SK: 'METADATA' },
+      UpdateExpression: 'SET githubInstallationId = :id, githubConnectedAt = :now, updatedAt = :now',
+      ExpressionAttributeValues: { ':id': installationId, ':now': now },
+    });
+
+    logger.info('GitHub App installed', { orgId, installationId, accountLogin });
+    return { statusCode: 200, body: JSON.stringify({ orgId, installationId }) };
+  }
+
+  if (payload.action === 'deleted' || payload.action === 'suspend') {
+    const integrationResult = await ddbQuery<IntegrationRecord>({
+      TableName: Config.tableName('Integrations'),
+      IndexName: 'GSI2-externalId-index',
+      KeyConditionExpression: 'GSI2PK = :pk',
+      ExpressionAttributeValues: { ':pk': `INSTALLATION#${installationId}` },
+      Limit: 1,
+    });
+    const integration = integrationResult.items[0];
+    if (integration) {
+      const status = payload.action === 'deleted' ? 'UNINSTALLED' : 'SUSPENDED';
+      await ddbUpdate({
+        TableName: Config.tableName('Integrations'),
+        Key: { PK: `ORG#${integration.orgId}`, SK: 'INTEGRATION#GITHUB' },
+        UpdateExpression: 'SET #s = :status, updatedAt = :now',
+        ExpressionAttributeNames: { '#s': 'status' },
+        ExpressionAttributeValues: { ':status': status, ':now': now },
+      });
+      logger.info('GitHub integration updated', { orgId: integration.orgId, status });
+    }
+    return { statusCode: 200, body: '{"ok":true}' };
+  }
+
+  return { statusCode: 204, body: '' };
 }

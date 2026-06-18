@@ -13,12 +13,26 @@ dashboardRouter.get('/stats', async (c) => {
   today.setHours(0, 0, 0, 0);
 
   // Parallel queries for stats
-  const [pendingJobs, openIncidents, approvedToday, recentReports] = await Promise.all([
+  const [pendingJobs, inProgressJobs, completedJobs, openIncidents, approvedToday, recentReports] = await Promise.all([
     ddbQuery<{ jobId: string }>({
       TableName: Config.tableName('AnalysisJobs'),
       IndexName: 'GSI2-orgStatus-createdAt-index',
       KeyConditionExpression: 'GSI2PK = :pk',
       ExpressionAttributeValues: { ':pk': `ORG#${orgId}#PENDING` },
+      Limit: 100,
+    }),
+    ddbQuery<{ jobId: string }>({
+      TableName: Config.tableName('AnalysisJobs'),
+      IndexName: 'GSI2-orgStatus-createdAt-index',
+      KeyConditionExpression: 'GSI2PK = :pk',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}#IN_PROGRESS` },
+      Limit: 100,
+    }),
+    ddbQuery<{ jobId: string }>({
+      TableName: Config.tableName('AnalysisJobs'),
+      IndexName: 'GSI2-orgStatus-createdAt-index',
+      KeyConditionExpression: 'GSI2PK = :pk',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}#COMPLETED` },
       Limit: 100,
     }),
     ddbQuery<{ incidentId: string }>({
@@ -29,8 +43,8 @@ dashboardRouter.get('/stats', async (c) => {
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':status': 'OPEN' },
       Limit: 100,
-    }),
-    ddbQuery<{ approvalId: string }>({
+    }).catch(() => ({ items: [] as { incidentId: string }[] })),
+    ddbQuery<{ approvalId: string; decision: string; createdAt: string }>({
       TableName: Config.tableName('Approvals'),
       IndexName: 'GSI2-orgId-createdAt-index',
       KeyConditionExpression: 'GSI2PK = :pk AND GSI2SK >= :today',
@@ -41,20 +55,23 @@ dashboardRouter.get('/stats', async (c) => {
         ':approved': 'APPROVED',
       },
       Limit: 100,
-    }),
-    ddbQuery<{ reportId: string; repoId: string; riskLevel: string; mergeRecommendation: string; createdAt: string }>({
+    }).catch(() => ({ items: [] as { approvalId: string; decision: string; createdAt: string }[] })),
+    ddbQuery<{ reportId: string; repoId: string; riskLevel: string; mergeRecommendation: string; createdAt: string; approvalStatus: string }>({
       TableName: Config.tableName('Reports'),
       IndexName: 'GSI3-orgApprovalStatus-createdAt-index',
       KeyConditionExpression: 'GSI3PK = :pk',
-      ExpressionAttributeValues: { ':pk': `ORG#${orgId}` },
+      FilterExpression: 'approvalStatus <> :deleted',
+      ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':deleted': 'DELETED' },
       ScanIndexForward: false,
       Limit: 10,
     }),
   ]);
 
+  const totalJobs = pendingJobs.items.length + inProgressJobs.items.length + completedJobs.items.length;
+
   return c.json({
-    totalJobs: 0, // would need separate count query
-    pendingJobs: pendingJobs.items.length,
+    totalJobs,
+    pendingJobs: pendingJobs.items.length + inProgressJobs.items.length,
     openIncidents: openIncidents.items.length,
     approvedToday: approvedToday.items.length,
     recentReports: recentReports.items.map((r) => ({

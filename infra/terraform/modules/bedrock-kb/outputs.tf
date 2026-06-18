@@ -1,16 +1,16 @@
 output "knowledge_base_id" {
-  description = "Bedrock Knowledge Base ID (used as BEDROCK_KB_ID env var)"
-  value       = aws_bedrockagent_knowledge_base.main.id
+  description = "Bedrock Knowledge Base ID (empty string when enabled=false)"
+  value       = try(aws_bedrockagent_knowledge_base.main[0].id, "")
 }
 
 output "knowledge_base_arn" {
-  description = "Bedrock Knowledge Base ARN"
-  value       = aws_bedrockagent_knowledge_base.main.arn
+  description = "Bedrock Knowledge Base ARN (empty string when enabled=false)"
+  value       = try(aws_bedrockagent_knowledge_base.main[0].arn, "")
 }
 
 output "collection_arn" {
-  description = "ARN of the shared OpenSearch Serverless collection"
-  value       = aws_opensearchserverless_collection.vectors.arn
+  description = "AOSS collection ARN (empty string when enabled=false)"
+  value       = try(aws_opensearchserverless_collection.vectors[0].arn, "")
 }
 
 output "kb_role_arn" {

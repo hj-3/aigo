@@ -78,8 +78,8 @@ Dockerfile          — python:3.12-slim + git + patch
 ## workers/notification (TypeScript Lambda)
 
 ### 역할
-분석 완료·고위험·Fix 준비·승인 필요 등 7종 이벤트를 SQS에서 소비하여
-Slack Block Kit 메시지와 GitHub PR 댓글을 발송한다.
+분석 완료·고위험·Fix 준비·승인 필요 등 8종 이벤트를 SQS에서 소비하여
+Slack Block Kit 메시지, GitHub PR 댓글, PR 머지/닫기를 수행한다.
 
 ### 파일 구조
 ```
@@ -90,20 +90,52 @@ workers/notification/
     index.ts          — SQS handler (SQSBatchResponse 부분 실패)
     handler.ts        — 단일 레코드 디스패치 (Slack + GitHub 분기)
     slack.ts          — Slack Web API chat.postMessage + Block Kit 빌더
-    github.ts         — GitHub App JWT 생성 + PR 코멘트 포스팅
+    github.ts         — GitHub App JWT 생성 + PR 코멘트/머지/닫기
 ```
 
-### 알림 유형 7종
+### 알림 유형 8종
 
-| 타입 | Slack | GitHub PR 코멘트 |
-|------|-------|-----------------|
-| `ANALYSIS_COMPLETE` | O | O |
-| `HIGH_RISK_DETECTED` | O | O |
-| `FIX_READY` | O | O |
-| `FIX_APPLIED` | O | O |
-| `APPROVAL_NEEDED` | O | O |
-| `INCIDENT_DETECTED` | O | — |
-| `INCIDENT_RESOLVED` | O | — |
+| 타입 | Slack | GitHub PR 코멘트 | GitHub PR 액션 |
+|------|-------|-----------------|---------------|
+| `REVIEW_SUBMITTED` | O (채널 지정 시) | — | **APPROVE 시 PR 머지** / **REJECT 시 PR 닫기** |
+| `ANALYSIS_COMPLETE` | O | O | — |
+| `HIGH_RISK_DETECTED` | O | O | — |
+| `FIX_READY` | O | O | — |
+| `FIX_APPLIED` | O | O | — |
+| `APPROVAL_NEEDED` | O | O | — |
+| `INCIDENT_DETECTED` | O | — | — |
+| `INCIDENT_RESOLVED` | O | — | — |
+
+### REVIEW_SUBMITTED 처리 흐름 (v11)
+
+대시보드 버튼 또는 Slack `/approve`/`/reject` 명령이 트리거:
+
+```
+notification-worker.processRecord()
+  └── if notificationType === 'REVIEW_SUBMITTED':
+        1. createPrReview(prUrl, 'APPROVE'|'REQUEST_CHANGES', body)
+           → POST /repos/{owner}/{repo}/pulls/{prNumber}/reviews
+        2. if decision === 'APPROVED':
+             mergePr(prUrl, creds, installationId)
+             → PUT /repos/{owner}/{repo}/pulls/{prNumber}/merge
+             (405/422 = 브랜치 보호로 머지 불가 → 경고 로그만, 에러 아님)
+        3. if decision === 'REJECTED':
+             closePr(prUrl, creds, installationId)
+             → PATCH /repos/{owner}/{repo}/pulls/{prNumber}  { state: 'closed' }
+```
+
+### SQS 표준 큐 주의사항
+
+`aigo-notification-queue`는 **표준 큐** (이름에 `.fifo` 없음, `FifoQueue=false`).  
+`packages/aws-clients/src/sqs.ts`의 `sqsSendMessage`는 `MessageGroupId`/`MessageDeduplicationId`를 **옵션으로 명시된 경우에만** 포함한다. 표준 큐에 FIFO 파라미터를 전달하면 AWS가 `InvalidParameterValue`를 반환하고 메시지가 전송되지 않는다.
+
+```typescript
+// ✅ 표준 큐 전송 — FIFO 파라미터 없음
+await sqsSendMessage(notificationQueueUrl, { type: 'NOTIFICATION', ... });
+
+// ❌ 이전 버그 — 표준 큐에 FIFO 파라미터 전달
+await sqsSendMessage(url, payload, { messageGroupId: '...' });
+```
 
 ### 배치 실패 처리
 `SQSBatchResponse`를 반환하여 실패한 레코드만 큐로 복귀.

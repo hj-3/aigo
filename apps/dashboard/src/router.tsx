@@ -28,6 +28,7 @@ import { FixCenterPage } from './pages/FixCenterPage';
 import { JobDetailPage } from './pages/JobDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TeamPage } from './pages/TeamPage';
+import { AcceptInvitePage } from './pages/AcceptInvitePage';
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -105,6 +106,8 @@ const protectedRoute = createRoute({
   ),
 });
 
+const inviteRoute = createRoute({ getParentRoute: () => rootRoute, path: '/invite', component: AcceptInvitePage });
+
 const dashboardRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/', component: DashboardPage });
 const reportsRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/reports', component: ReportsPage });
 const reportDetailRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/reports/$reportId', component: ReportDetailPage });
@@ -120,6 +123,7 @@ const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
   onboardingRoute,
+  inviteRoute,
   protectedRoute.addChildren([
     dashboardRoute,
     reportsRoute,

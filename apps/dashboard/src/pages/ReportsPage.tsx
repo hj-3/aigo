@@ -1,5 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { Trash2 } from 'lucide-react';
 import { api } from '@/lib/api-client';
 import { formatDate, riskLevelBadge, cn } from '@/lib/utils';
 
@@ -13,6 +14,7 @@ interface Report {
   readonly summary: string;
   readonly createdAt: string;
   readonly findingsBySeverity: Record<string, number>;
+  readonly prContext?: { readonly prNumber?: number; readonly prTitle?: string };
 }
 
 function RiskBar({ score, level }: { score: number; level: string }) {
@@ -42,10 +44,23 @@ function RiskBar({ score, level }: { score: number; level: string }) {
 }
 
 export function ReportsPage() {
+  const qc = useQueryClient();
   const { data: reports, isLoading } = useQuery<Report[]>({
     queryKey: ['reports'],
     queryFn: () => api.get<Report[]>('/reports'),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: (reportId: string) => api.delete(`/reports/${reportId}`),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['reports'] }),
+  });
+
+  function handleDelete(reportId: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!window.confirm('이 리포트를 삭제하시겠습니까?')) return;
+    deleteMutation.mutate(reportId);
+  }
 
   return (
     <div className="space-y-6">
@@ -72,7 +87,7 @@ export function ReportsPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-term bg-canvas/50">
-              {['REPOSITORY', 'RISK SCORE', 'LEVEL', 'RECOMMENDATION', 'STATUS', 'C / H', 'CREATED'].map((h) => (
+              {['REPOSITORY / PR', 'RISK SCORE', 'LEVEL', 'RECOMMENDATION', 'STATUS', 'C / H', 'CREATED', ''].map((h) => (
                 <th key={h} className="text-left font-mono text-[10px] text-term-secondary uppercase tracking-wider px-4 py-2.5">
                   {h}
                 </th>
@@ -89,13 +104,17 @@ export function ReportsPage() {
                   <Link
                     to="/reports/$reportId"
                     params={{ reportId: report.reportId }}
-                    className="text-accent hover:underline font-medium"
+                    className="text-accent hover:underline font-medium block"
                   >
                     {report.repoId}
                   </Link>
+                  {report.prContext?.prTitle && (
+                    <p className="text-term-secondary text-[10px] mt-0.5 truncate max-w-[200px]">
+                      #{report.prContext.prNumber} {report.prContext.prTitle}
+                    </p>
+                  )}
                 </td>
 
-                {/* Risk score bar */}
                 <td className="px-4 py-3">
                   <RiskBar score={report.riskScore} level={report.riskLevel} />
                 </td>
@@ -119,12 +138,23 @@ export function ReportsPage() {
                 </td>
 
                 <td className="px-4 py-3 text-term">
-                  <span className="text-red-400">{report.findingsBySeverity['CRITICAL'] ?? 0}</span>
+                  <span className="text-red-400">{report.findingsBySeverity?.['CRITICAL'] ?? 0}</span>
                   <span className="text-term-secondary mx-1">/</span>
-                  <span className="text-orange-400">{report.findingsBySeverity['HIGH'] ?? 0}</span>
+                  <span className="text-orange-400">{report.findingsBySeverity?.['HIGH'] ?? 0}</span>
                 </td>
 
                 <td className="px-4 py-3 text-term-secondary">{formatDate(report.createdAt)}</td>
+
+                <td className="px-4 py-3">
+                  <button
+                    onClick={(e) => handleDelete(report.reportId, e)}
+                    disabled={deleteMutation.isPending}
+                    className="p-1 rounded text-term-secondary/40 hover:text-red-400 hover:bg-red-400/10 transition-colors disabled:opacity-30"
+                    title="리포트 삭제"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>

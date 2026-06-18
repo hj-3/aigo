@@ -1,8 +1,50 @@
 import { Hono } from 'hono';
 import { zValidator } from '@hono/zod-validator';
 import { z } from 'zod';
-import { ddbQuery, ddbGet, ddbPut, ddbUpdate, ddbDelete, Config } from '@aigo/aws-clients';
+import { createSign } from 'node:crypto';
+import { ddbQuery, ddbGet, ddbPut, ddbUpdate, getSecretJson, Config } from '@aigo/aws-clients';
 import { requireAuth, requireRole, extractClaims } from '../middleware/auth.js';
+
+interface GitHubAppCredentials {
+  readonly appId: string;
+  readonly privateKey: string;
+}
+
+function createGitHubJWT(appId: string, privateKey: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({ iat: now - 60, exp: now + 600, iss: appId })).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const sign = createSign('RSA-SHA256');
+  sign.update(signingInput);
+  return `${signingInput}.${sign.sign(privateKey, 'base64url')}`;
+}
+
+async function getInstallationToken(appId: string, privateKey: string, installationId: string): Promise<string> {
+  const jwt = createGitHubJWT(appId, privateKey);
+  const res = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${jwt}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+  const data = await res.json() as { token: string };
+  return data.token;
+}
+
+async function fetchGitHubRepoId(fullName: string, token: string): Promise<{ id: number; default_branch: string } | null> {
+  const res = await fetch(`https://api.github.com/repos/${fullName}`, {
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Accept': 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+    },
+  });
+  if (!res.ok) return null;
+  return res.json() as Promise<{ id: number; default_branch: string }>;
+}
 
 const ULID_PLACEHOLDER = (): string => {
   return Date.now().toString(36).toUpperCase() + Math.random().toString(36).substring(2, 9).toUpperCase();
@@ -66,6 +108,34 @@ repositoriesRouter.post(
     const now = new Date().toISOString();
     const [owner, repoName] = body.fullName.split('/');
 
+    // Auto-fetch providerRepoId from GitHub if not provided
+    let providerRepoId = body.providerRepoId ?? null;
+    let defaultBranch = body.defaultBranch;
+
+    if (!providerRepoId) {
+      try {
+        const integrationResult = await ddbQuery<{ installationId: string }>({
+          TableName: Config.tableName('Integrations'),
+          KeyConditionExpression: 'PK = :pk AND SK = :sk',
+          ExpressionAttributeValues: { ':pk': `ORG#${orgId}`, ':sk': 'INTEGRATION#GITHUB' },
+          Limit: 1,
+        });
+        const installationId = integrationResult.items[0]?.installationId;
+        if (installationId) {
+          const secretArn = process.env['GITHUB_SECRET_ARN']!;
+          const creds = await getSecretJson<GitHubAppCredentials>(secretArn);
+          const token = await getInstallationToken(creds.appId, creds.privateKey, installationId);
+          const ghRepo = await fetchGitHubRepoId(body.fullName, token);
+          if (ghRepo) {
+            providerRepoId = String(ghRepo.id);
+            defaultBranch = ghRepo.default_branch;
+          }
+        }
+      } catch {
+        // Non-fatal: store without providerRepoId, PR webhooks won't auto-route
+      }
+    }
+
     await ddbPut({
       TableName: Config.tableName('Repositories'),
       Item: {
@@ -77,22 +147,20 @@ repositoriesRouter.post(
         owner,
         name: repoName,
         provider: body.provider,
-        providerRepoId: body.providerRepoId ?? null,
-        defaultBranch: body.defaultBranch,
+        providerRepoId,
+        defaultBranch,
         status: 'ACTIVE',
         config: body.config,
         createdAt: now,
         updatedAt: now,
         GSI1PK: `ORG#${orgId}`,
         GSI1SK: `${body.provider}#${repoId}`,
-        ...(body.providerRepoId
-          ? { GSI2PK: `PROVIDER_REPO#${body.providerRepoId}` }
-          : {}),
+        ...(providerRepoId ? { GSI2PK: `PROVIDER_REPO#${providerRepoId}` } : {}),
       },
       ConditionExpression: 'attribute_not_exists(PK)',
     });
 
-    return c.json({ repoId, fullName: body.fullName }, 201);
+    return c.json({ repoId, fullName: body.fullName, providerRepoId }, 201);
   },
 );
 

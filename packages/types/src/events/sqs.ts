@@ -84,7 +84,8 @@ export type NotificationType =
   | 'FIX_APPLIED'
   | 'INCIDENT_DETECTED'
   | 'INCIDENT_RESOLVED'
-  | 'APPROVAL_NEEDED';
+  | 'APPROVAL_NEEDED'
+  | 'REVIEW_SUBMITTED';
 
 export interface NotificationQueueMessage extends SqsMessageBase {
   readonly type: 'NOTIFICATION';
@@ -93,6 +94,8 @@ export interface NotificationQueueMessage extends SqsMessageBase {
   readonly recipients: readonly string[];   // userId[]
   readonly payload: Record<string, unknown>;
   readonly slackChannel?: string;
+  /** For REVIEW_SUBMITTED: org-specific GitHub installation ID */
+  readonly installationId?: string;
 }
 
 export type SqsMessagePayload =

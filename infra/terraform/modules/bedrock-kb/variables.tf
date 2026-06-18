@@ -20,6 +20,12 @@ variable "kb_bucket_name" {
   type        = string
 }
 
+variable "enabled" {
+  description = "Set to false to destroy AOSS + KB and stop ~$692/month OCU cost"
+  type        = bool
+  default     = true
+}
+
 variable "tags" {
   type    = map(string)
   default = {}

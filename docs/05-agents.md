@@ -39,17 +39,29 @@ PR diff를 받아 4개 페르소나로 분석 → Risk Score 산출 → Report �
 ```
 1. lightweight-worker → Lambda.invoke(InvocationType=Event) → aigo-orchestrator
 2. diff_content 포함 job_input 수신 (GitHub API diff는 lightweight-worker에서 미리 조회)
-3. 순차 페르소나 분석:
-   Step 1 → KB 검색 → Code Review   → save_findings(agent_name="code-reviewer")
-   Step 2 → KB 검색 → Infra Review  → save_findings(agent_name="infra-reviewer")
-   Step 3 → KB 검색 → Security      → save_findings(agent_name="security-agent")
-   Step 4 → KB 검색 → Risk Review   → save_findings(agent_name="risk-reviewer")
-4. Risk Score 산출: min((CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1), 100)
-5. Risk Level 결정: 0-20=LOW, 21-50=MEDIUM, 51-80=HIGH, 81-100=CRITICAL
-6. 머지 권고: LOW→APPROVE, MEDIUM/HIGH→REQUEST_CHANGES, CRITICAL→BLOCK
-7. save_report (riskScore, riskLevel, mergeRecommendation 포함)
-8. notify_analysis_complete → Slack 알림
-9. post_pr_comment → GitHub PR Comment
+3. classify_personas(changedFiles) → 활성 페르소나 결정 (Python 코드에서 결정)
+   - code: 항상
+   - infra: *.tf / *.hcl / Dockerfile / helm / k8s 파일이 있을 때만
+   - security: 순수 문서(*.md) PR이 아닐 경우
+   - risk: 순수 문서(*.md) PR이 아닐 경우
+4. 선택된 페르소나만 순차 실행:
+   (code)     KB 검색 → Code Review   → save_findings(agent_name="code-reviewer")  → AgentRuns 기록
+   (infra?)   KB 검색 → Infra Review  → save_findings(agent_name="infra-reviewer") → AgentRuns 기록
+   (security) KB 검색 → Security      → save_findings(agent_name="security-agent") → AgentRuns 기록
+   (risk)     KB 검색 → Risk Review   → save_findings(agent_name="risk-reviewer")  → AgentRuns 기록
+   ※ save_findings 미호출 페르소나(스킵)는 AgentRuns 레코드 없음 → Dashboard 회색(gray) 표시
+5. Risk Score 산출: min((CRITICAL×25) + (HIGH×10) + (MEDIUM×3) + (LOW×1), 100)
+6. Risk Level 결정: 0-20=LOW, 21-50=MEDIUM, 51-80=HIGH, 81-100=CRITICAL
+7. 머지 권고: LOW→APPROVE, MEDIUM/HIGH→REQUEST_CHANGES, CRITICAL→BLOCK
+8. save_report (riskScore, riskLevel, mergeRecommendation, prContext 포함)
+9. update_check_run → GitHub Check Run 결과 반영
+10. notify_analysis_complete → Slack 알림
+11. post_pr_comment → GitHub PR Comment
+11b. auto_merge_pr(org_id, risk_score, merge_recommendation, installation_id)
+    → org.approvalRequired=false AND risk_score ≤ org.riskThreshold(기본 20) 일 때 자동 머지
+    → 조건 불충족 시 스킵 (Slack /approve 또는 Dashboard 수동 승인 필요)
+    → 수동 /approve → notification-worker → GitHub PR Review(APPROVE) 제출 후 PR 머지
+12. save_pr_analysis_memory → 미래 분析을 위한 메모리 저장
 ```
 
 ### Risk Score 공식
@@ -80,8 +92,8 @@ github_tools:  post_pr_comment
 
 | 유형 | 소스 | 처리 |
 |------|------|------|
-| `PR_ANALYSIS` | GitHub Webhook | 4-페르소나 분석 전체 실행 |
-| `REANALYSIS` | Dashboard 재실행 | 동일 PR 재분석 |
+| `PR_ANALYSIS` | GitHub Webhook | 지능적 페르소나 선택 → 관련 페르소나만 실행 |
+| `REANALYSIS` | Dashboard 재실행 | 동일 PR 재분석 (페르소나 재선택) |
 | `INCIDENT_INVESTIGATION` | CloudWatch Alarm / Slack | invoke_devops_agent 호출 |
 
 ---
@@ -232,3 +244,64 @@ Orchestrator Agent가 각 페르소나 분석 전 직접 호출.
 | Orchestrator (멀티 페르소나) | Lambda `aigo-orchestrator` 3008MB / 900s | lightweight-worker → Lambda.invoke(Event) |
 | DevOps Incident Agent | Bedrock AgentCore | Orchestrator → invoke_devops_agent |
 | Fix Agent | Bedrock AgentCore + ECS Fargate | heavy-worker → AgentCore Runtime |
+
+---
+
+## 변경 이력
+
+### 2026-06-18 — auto_merge_pr riskThreshold 타입 변경 (orchestrator v22→v23)
+
+**변경 내용**: 처리 흐름 step 11b의 `auto_merge_pr`에서 `riskThreshold`를 정수로 직접 비교하던 방식을 문자열 → 정수 dict 매핑으로 변경.
+
+```python
+# 변경 전 (v22) — TypeError: int('HIGH') 크래시
+if risk_score <= org.get('riskThreshold', 20):
+
+# 변경 후 (v23)
+THRESHOLD_MAP = {'NONE': -1, 'LOW': 19, 'MEDIUM': 39, 'HIGH': 74, 'CRITICAL': 100}
+threshold_int = THRESHOLD_MAP.get(str(threshold_str), -1)
+if risk_score <= threshold_int:
+```
+
+**이유**: DynamoDB `aigo-Organizations.riskThreshold`가 문자열(`NONE`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`)로 저장됨. `int()` 변환 시 `ValueError` 크래시.
+
+**DashboardAPI 연동**: `SettingsPage`의 `riskThreshold` 드롭다운 옵션은 `NONE`/`LOW`/`MEDIUM`/`HIGH`/`CRITICAL`이며 각각 내부 임계값으로 변환됨.
+
+---
+
+### 2026-06-17 — ddb_tools: save_pr_analysis_memory / save_incident_memory 추가
+
+**변경 내용**: `ddb_tools` 섹션의 Tool 목록에 누락된 Memory 관련 도구 추가.
+
+| Tool | 설명 |
+|------|------|
+| `save_pr_analysis_memory` | PR 분석 이력 저장 (`aigo-AgentMemory`, TTL 90일) |
+| `get_repo_memory` | 같은 레포의 과거 PR 분석 이력 조회 (limit 3) |
+| `get_developer_memory` | 특정 개발자의 과거 PR 패턴 조회 (limit 5) |
+| `save_incident_memory` | 인시던트 RCA 저장 (`aigo-AgentMemory`, TTL 1년) |
+| `get_incident_memory` | 과거 유사 인시던트 패턴 조회 (limit 3) |
+
+**Memory 저장 위치**: Bedrock AgentCore 네이티브 Memory SDK가 아닌 **DynamoDB `aigo-AgentMemory` 테이블** (커스텀 구현). 상세: `docs/impl/agent-memory.md`.
+
+**사용 시점**:
+- PR 분석 시작 전: `get_repo_memory` + `get_developer_memory` → 컨텍스트 주입
+- PR 분석 완료 후: `save_pr_analysis_memory` (step 12)
+- 인시던트 조사 시작 전: `get_incident_memory`
+- 인시던트 조사 완료 후: `save_incident_memory`
+
+---
+
+### 2026-06-17 — save_findings → AgentRuns 이중 기록 추가 (orchestrator v22)
+
+**변경 내용**: `save_findings` 호출 시 Findings 테이블에 저장하는 동시에 `aigo-AgentRuns` 테이블에도 페르소나 레코드 기록.
+
+**이유**: Dashboard의 Agent 실행 타임라인(`JobDetailPage`) 및 AgentPipeline UI가 `aigo-AgentRuns` 레코드를 기반으로 페르소나 상태(done/skipped)를 표시. `save_findings` 미호출 페르소나(스킵)는 AgentRuns 레코드 없음 → Dashboard에서 회색(skipped) 표시.
+
+---
+
+### 2026-06-17 — prContext 필드 추가
+
+**변경 내용**: `save_report` 호출 시 `prContext`(prNumber, prUrl, prTitle, commitSha, authorLogin) 포함.
+
+**이유**: Dashboard 승인 버튼 클릭 시 `dashboard-api`가 `report.prContext.prUrl`에서 GitHub PR URL을 가져와 notification-worker에 전달. PR URL 없으면 merge/close 불가.
+

@@ -108,6 +108,7 @@ function buildSlackConnectUrl(clientId: string, redirectUri: string, orgId: stri
     'chat:write.public',
     'channels:read',
     'groups:read',
+    'commands',
   ].join(',');
   return `https://slack.com/oauth/v2/authorize?client_id=${clientId}&scope=${scopes}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
 }

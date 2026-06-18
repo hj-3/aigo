@@ -123,14 +123,26 @@ Agent 실행 타임라인: agentType, status, 소요 시간(duration), 입력/�
 | 항목 | 타입 | 권한 |
 |------|------|------|
 | PR 자동 분석 (`autoAnalyzeOnPR`) | checkbox | ADMIN |
-| 승인 필요 (`approvalRequired`) | checkbox | ADMIN |
-| 위험 임계값 (`riskThreshold`) | select (CRITICAL/HIGH/MEDIUM) | ADMIN |
+| 수동 승인 필수 (`approvalRequired`) | checkbox | ADMIN |
+| 자동 머지 임계값 (`riskThreshold`) | select (NONE/LOW/MEDIUM/HIGH/CRITICAL) | ADMIN |
 | Slack 채널 (`slackChannel`) | text | ADMIN |
 | 타임존 (`timezone`) | select | ADMIN |
 
 `useAuthStore((s) => s.hasRole('ADMIN'))`으로 비ADMIN 사용자에게는 편집 UI를 숨긴다.  
 `draft` 패턴으로 변경 사항을 추적하고, 변경이 없거나 mutation 진행 중이면 저장 버튼 비활성화.  
 저장 API: `PATCH /settings`
+
+**riskThreshold 옵션 의미:**
+
+| 옵션 | 내부 임계값 | 동작 |
+|------|-----------|------|
+| `NONE` | -1 | 자동 머지 완전 비활성화 |
+| `LOW` | 19 | risk_score < 20 일 때만 자동 머지 |
+| `MEDIUM` | 39 | risk_score < 40 일 때 자동 머지 |
+| `HIGH` | 74 | risk_score < 75 일 때 자동 머지 (기본값) |
+| `CRITICAL` | 100 | 모든 PR 자동 머지 |
+
+> `approvalRequired`가 체크된 경우 riskThreshold와 관계없이 자동 머지가 비활성화된다.
 
 ### 빌드 최적화
 - manualChunks: react, router, query 별도 청크
@@ -150,10 +162,15 @@ Agent 실행 타임라인: agentType, status, 소요 시간(duration), 입력/�
 | GET | /fix | Fix 요청 목록 (`?reportId=` 또는 `?status=` 필터) |
 | GET | /fix/{fixId} | Fix 요청 상세 |
 | GET | /jobs | 분석 Job 목록 (`?status=` 필터) |
+| GET | /jobs/active | PENDING + IN_PROGRESS Job 병합 조회 (대시보드 실시간 뷰) |
 | GET | /jobs/agent-runs | 특정 Job의 Agent 실행 목록 (`?jobId=` 필수) |
 | GET | /jobs/{jobId} | Job 상세 |
+| GET | /reports | 분석 리포트 목록 (DELETED 제외) |
+| GET | /reports/{reportId} | 리포트 상세 (findings 포함) |
+| DELETE | /reports/{reportId} | 리포트 삭제 (soft-delete, ADMIN 전용) |
+| POST | /reports/{reportId}/approve | 승인/거절 결정 기록 + AgentMemory 업데이트 |
 | GET | /settings | 조직 설정 조회 |
-| PATCH | /settings | 조직 설정 변경 (ADMIN 전용) |
+| PATCH | /settings | 조직 설정 변경 (ADMIN 전용, slackChannel → SSM 동기화) |
 
 ### 미들웨어
 - `requireAuth()`: Cognito JWT claims 추출 (requestContext.authorizer.jwt.claims)
@@ -178,11 +195,50 @@ Agent 실행 타임라인: agentType, status, 소요 시간(duration), 입력/�
 
 **API Gateway 라우트 매핑 추가 (`envs/prod/main.tf`)**
 ```hcl
-"GET /fix"             = module.lambda_dashboard_api.alias_arn
-"GET /jobs/agent-runs" = module.lambda_dashboard_api.alias_arn
-"GET /settings"        = module.lambda_dashboard_api.alias_arn
-"PATCH /settings"      = module.lambda_dashboard_api.alias_arn
+"GET /fix"                    = module.lambda_dashboard_api.alias_arn
+"GET /jobs/active"            = module.lambda_dashboard_api.alias_arn
+"GET /jobs/agent-runs"        = module.lambda_dashboard_api.alias_arn
+"DELETE /reports/{reportId}"  = module.lambda_dashboard_api.alias_arn
+"GET /settings"               = module.lambda_dashboard_api.alias_arn
+"PATCH /settings"             = module.lambda_dashboard_api.alias_arn
 ```
+
+**Reports 삭제 구현 (`routes/reports.ts`)**
+- Soft-delete: `approvalStatus = 'DELETED'`, `GSI3SK = DELETED#<now>` 업데이트
+- GET 쿼리에 `FilterExpression: 'approvalStatus <> :deleted'` 적용
+- ADMIN 역할 필요
+
+**Findings 조회 키 (reports.ts, v41 수정)**
+
+`save_findings`는 아직 reportId가 생성되지 않은 시점에 호출되므로 `GSI1PK = "JOB#{jobId}"`로 저장한다. 따라서 리포트 상세 조회 시 findings를 가져올 때는 `reportId`가 아닌 `jobId`로 쿼리해야 한다.
+
+```typescript
+// ❌ 이전 버그 — reportId로 조회 → 항상 빈 결과
+GSI1PK = `REPORT#${reportId}`
+
+// ✅ 수정 — report 레코드에서 jobId 추출 후 JOB# prefix로 조회
+const jobId = (report as Record<string, string>)['jobId'] ?? '';
+GSI1PK = `JOB#${jobId}`
+```
+
+**설정과 Slack 연동 (`routes/settings.ts`)**
+- `PATCH /settings`에서 `slackChannel` 변경 시 SSM `/aigo/integrations/slack/{orgId}/channel-id`에 자동 저장
+- 오케스트레이터가 SSM에서 채널 ID를 읽어 알림 발송
+
+**AgentPipeline 컴포넌트 재설계 (`components/AgentPipeline.tsx`)**
+- 기존 fan-out CSS 레이아웃 → 수직 스텝 레이아웃으로 변경
+- 4개 에이전트 페르소나 (Code/Infra/Security/Risk)를 3열 그리드로 표시
+- compact 모드: 선형 배지 체인으로 대시보드 카드에서 렌더링
+- 각 상태 (pending/running/done/failed) 에 색상·점 애니메이션 적용
+
+**Dashboard 활성 작업 뷰 (`pages/DashboardPage.tsx`)**
+- `GET /jobs/active` 폴링 (IN_PROGRESS 있으면 3초, 없으면 5초)
+- 각 job 카드에 compact AgentPipeline + 에이전트 배지 표시
+- 실패 시 errorMessage 빨간 박스 표시
+
+**ddb_tools.py save_report 개선**
+- `prContext` (prNumber, prUrl, prTitle, commitSha, authorLogin) DynamoDB 저장 추가
+- 오케스트레이터 프롬프트에서 `save_report` 호출 시 PR 정보 전달
 
 ### 데이터 격리
 - 모든 쿼리에 orgId 필터 적용

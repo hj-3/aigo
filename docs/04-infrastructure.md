@@ -364,3 +364,133 @@ DynamoDB 테이블: aigo-tf-lock
 | NAT Gateway | VPC Endpoint로 AWS 트래픽 우회, NAT는 외부 SaaS 전용 |
 | Interface Endpoint | NAT 트래픽 비용 ($0.09/GB) → Endpoint ($0.01/GB) 절감 |
 | Bedrock | Claude Sonnet 4.x (Opus 대비 비용 효율, 성능 충분) |
+
+---
+
+## 변경 이력
+
+### 2026-06-15 — Lambda 함수 통합: 단일 dashboard-api 구조
+
+**변경 내용**: 문서의 Lambda 함수 목록에 기재된 `approval-api`, `fix-api`, `settings-api`, `audit-exporter`는 실제 배포되지 않음. 해당 기능은 모두 `aigo-dashboard-api` (Hono 단일 Lambda) 내 라우트로 구현.
+
+**이유**: 별도 Lambda로 분리할 만큼 복잡도가 크지 않고, 단일 Lambda는 Cold Start 분산 및 IAM 관리 단순화.
+
+**실제 배포된 Lambda 함수**:
+
+| 함수 이름 | 런타임 | 현재 버전 (2026-06-18) |
+|-----------|--------|----------------------|
+| `aigo-github-connector` | Node.js 22.x | v25 |
+| `aigo-slack-connector` | Node.js 22.x | - |
+| `aigo-aws-event-connector` | Node.js 22.x | - |
+| `aigo-dashboard-api` | Node.js 22.x | v42 |
+| `aigo-lightweight-worker` | Node.js 22.x | v28 |
+| `aigo-notification-worker` | Node.js 22.x | v11 |
+| `aigo-orchestrator` | Python 3.12 | v23 |
+| `aigo-post-confirmation` | Node.js 22.x | - |
+| `aigo-github-app-setup` | Node.js 22.x | - |
+| `aigo-slack-oauth` | Node.js 22.x | - |
+
+> `dashboard-cmd-connector`는 존재하지 않음. `aigo-dashboard-api`가 승인/거절/Fix 요청 전부 처리.
+
+---
+
+### 2026-06-16 — API Gateway 라우트 실제 현황
+
+**변경 내용**: API GW 라우트 목록이 실제 구성과 다름. 실제는 `aigo-dashboard-api` 단일 Lambda가 다수 라우트를 처리.
+
+**추가된 라우트** (초기 설계 미포함):
+```
+GET  /fix                          → dashboard-api
+GET  /fix/{fixId}                  → dashboard-api
+GET  /jobs/active                  → dashboard-api
+GET  /jobs/agent-runs              → dashboard-api
+GET  /team/members                 → dashboard-api
+POST /team/invite                  → dashboard-api
+POST /team/accept-invite           → dashboard-api
+GET  /team/invite/{token}          → dashboard-api (no auth — 초대 수락용 공개 라우트)
+GET  /integrations                 → dashboard-api
+DELETE /integrations/slack         → dashboard-api
+GET  /settings                     → dashboard-api
+PATCH /settings                    → dashboard-api
+DELETE /reports/{reportId}         → dashboard-api (soft-delete, ADMIN 전용)
+POST /reports/{reportId}/approve   → dashboard-api (approve + reject 모두 처리)
+```
+
+---
+
+### 2026-06-15 — AgentCore Runtime 섹션 실제 구현 반영
+
+**변경 내용**: "AgentCore Runtime" 섹션에 기술된 `aigo-orchestrator`, `aigo-code-reviewer` 등 여러 AgentCore Runtime은 실제로 배포되지 않음.
+
+**실제 구조**:
+- **Orchestrator**: Python Lambda (`aigo-orchestrator`, 3008 MB, 900s) — Strands SDK로 직접 실행. AgentCore Runtime 아님
+- **Incident Agent**: Bedrock AgentCore (`aigo-incident-agent` / alias `HVV77MYBFB`) — AgentCore Runtime 맞음
+- **Fix Agent**: Bedrock AgentCore (`aigo-fix-agent` / alias `L7BRXDKDFV`) — AgentCore Runtime 맞음
+
+**AgentCore Gateway**: 구현하지 않음. Tool 격리는 Strands `@tool` 함수로 in-process 처리.
+
+---
+
+### 2026-06-15 — VPC Interface Endpoints 비활성화
+
+**변경 내용**: Interface Endpoints (11개) 비활성화 상태 운영 중 (`enable_interface_endpoints = false`).
+
+**이유**: 비용 절감 — Interface Endpoint 3AZ × 11개 ≈ $330/월. 서비스 초기 운영 단계에서 비용 최우선.
+
+**현재 트래픽 경로**: Lambda/ECS → NAT Gateway → AWS 서비스 (S3/DynamoDB는 Gateway Endpoint로 예외 처리)
+
+상세: `docs/runbooks/cost-reduction-terraform.md` 참조.
+
+---
+
+### 2026-06-15 — AOSS Knowledge Base 비활성화
+
+**변경 내용**: Bedrock Knowledge Base (Amazon OpenSearch Serverless) 비활성화. S3 Vector Index로 대체.
+
+**비용**: AOSS ~$692/월 → S3 Vector ~$1/월.
+
+---
+
+### 2026-06-10 — Cognito 설정 변경
+
+**변경 내용**:
+
+| 항목 | 원본 설계 | 실제 |
+|------|---------|------|
+| 비밀번호 최소 길이 | 12자 | **8자** |
+| Callback URL | `/auth/callback` | **`/` (루트)** |
+| 로그인 방식 | Hosted UI (Classic) | **Managed Login v2** |
+
+**이유**: Managed Login은 커스터마이징 가능한 AWS 관리형 UI. Callback URL은 SPA 루트 리다이렉트 방식으로 간소화.
+
+---
+
+### 2026-06-10 — Secrets Manager 실제 시크릿 이름
+
+**변경 내용**: 문서의 시크릿 이름이 실제 배포된 이름과 다름.
+
+| 문서 기재 | 실제 배포 이름 |
+|---------|-------------|
+| `aigo/github/app-private-key` | `aigo/github/app-credentials` (appId + privateKey + installationId + webhookSecret 통합) |
+| `aigo/github/webhook-secret` | `aigo/github/webhook-secret` (동일) |
+| `aigo/slack/signing-secret` | `aigo/slack/oauth-credentials` (clientId + clientSecret + signingSecret) |
+| `aigo/slack/bot-token` | `aigo/slack/bot-token` (동일) |
+| `aigo/stripe/secret-key` | 미배포 (Stripe 미연동) |
+| `aigo/cognito/client-secret` | 미배포 (App Client Secret 미사용) |
+
+---
+
+### 2026-06-16 — SQS 큐 실제 구성
+
+**변경 내용**: 문서의 SQS 큐가 모두 Standard로 표기되어 있으나 실제는 일부 FIFO.
+
+| 큐 | 실제 타입 | 가시성 타임아웃 |
+|----|---------|--------------|
+| `aigo-analysis-queue.fifo` | FIFO | 900s |
+| `aigo-command-queue.fifo` | FIFO | 300s |
+| `aigo-incident-queue.fifo` | FIFO | 900s |
+| `aigo-notification-queue` | **Standard** | 60s |
+| `aigo-fix-queue.fifo` | FIFO | 1800s |
+
+> `aigo-notification-queue`에 FIFO 파라미터(`MessageGroupId`, `MessageDeduplicationId`)를 전달하면 `InvalidParameterValue` 에러 발생. `packages/aws-clients/src/sqs.ts`는 옵션 전달 시에만 FIFO 파라미터 포함하도록 수정됨 (2026-06-18).
+

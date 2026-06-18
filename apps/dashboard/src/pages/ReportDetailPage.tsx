@@ -36,13 +36,13 @@ interface ReportDetail {
   };
 }
 
+// Keys must match substrings of the agentName values saved by the orchestrator:
+// 'code-reviewer', 'infra-reviewer', 'security-agent', 'risk-reviewer'
 const AGENT_META: Record<string, { icon: string; label: string; sublabel: string }> = {
-  code:        { icon: '📝', label: 'Code',     sublabel: '코드 품질' },
-  security:    { icon: '🔒', label: 'Security', sublabel: '보안 취약점' },
-  infra:       { icon: '⚙️',  label: 'Infra',    sublabel: '인프라 변경' },
-  docs:        { icon: '📚', label: 'Docs',     sublabel: '문서 변경' },
-  test:        { icon: '🧪', label: 'Test',     sublabel: '테스트 커버리지' },
-  performance: { icon: '⚡', label: 'Perf',     sublabel: '성능 분석' },
+  code:     { icon: '📝', label: 'Code',     sublabel: '코드 품질' },
+  security: { icon: '🔒', label: 'Security', sublabel: '보안 취약점' },
+  infra:    { icon: '⚙️',  label: 'Infra',    sublabel: '인프라 변경' },
+  risk:     { icon: '⚠️',  label: 'Risk',     sublabel: '리스크 평가' },
 };
 
 /** Infer pipeline nodes from completed report findings (no job run data needed) */
@@ -163,26 +163,32 @@ export function ReportDetailPage() {
         <div className="grid grid-cols-2 gap-x-6 gap-y-3 font-mono text-xs">
           <div>
             <p className="text-[10px] text-term-secondary uppercase tracking-wider">PR</p>
-            <a
-              href={report.prContext.prUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 text-accent hover:underline mt-0.5"
-            >
-              #{report.prContext.prNumber} <ExternalLink className="w-3 h-3" />
-            </a>
+            {report.prContext?.prUrl ? (
+              <a
+                href={report.prContext.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-accent hover:underline mt-0.5"
+              >
+                #{report.prContext.prNumber} <ExternalLink className="w-3 h-3" />
+              </a>
+            ) : (
+              <p className="text-term mt-0.5">#{report.prContext?.prNumber ?? '—'}</p>
+            )}
           </div>
           <div>
             <p className="text-[10px] text-term-secondary uppercase tracking-wider">AUTHOR</p>
-            <p className="text-term mt-0.5">@{report.prContext.authorLogin}</p>
+            <p className="text-term mt-0.5">@{report.prContext?.authorLogin ?? '—'}</p>
           </div>
           <div className="col-span-2">
             <p className="text-[10px] text-term-secondary uppercase tracking-wider">TITLE</p>
-            <p className="text-term mt-0.5">{report.prContext.prTitle}</p>
+            <p className="text-term mt-0.5">{report.prContext?.prTitle ?? '—'}</p>
           </div>
           <div>
             <p className="text-[10px] text-term-secondary uppercase tracking-wider">COMMIT</p>
-            <code className="text-term-secondary mt-0.5 block">{report.prContext.commitSha.slice(0, 8)}</code>
+            <code className="text-term-secondary mt-0.5 block">
+              {report.prContext?.commitSha ? report.prContext.commitSha.slice(0, 8) : '—'}
+            </code>
           </div>
           <div>
             <p className="text-[10px] text-term-secondary uppercase tracking-wider">CREATED</p>
@@ -240,45 +246,53 @@ export function ReportDetailPage() {
         <p className="font-mono text-xs text-term leading-relaxed">{report.summary}</p>
       </div>
 
-      {/* Actions */}
-      {isPending && (
-        <div className="card p-5">
-          <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5 mb-4">
-            <span className="text-accent">›</span> 검토 액션
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => approveMutation.mutate('')}
-              disabled={approveMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-500/40 bg-green-500/10 text-green-400 font-mono text-xs hover:bg-green-500/20 disabled:opacity-50 transition-colors"
-            >
-              <CheckCircle className="w-3.5 h-3.5" />
-              {approveMutation.isPending ? '처리 중...' : '$ approve'}
-            </button>
-            <button
-              onClick={() => rejectMutation.mutate('변경 사항이 필요합니다.')}
-              disabled={rejectMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-400 font-mono text-xs hover:bg-red-500/20 disabled:opacity-50 transition-colors"
-            >
-              <XCircle className="w-3.5 h-3.5" />
-              {rejectMutation.isPending ? '처리 중...' : '$ reject'}
-            </button>
-            <button
-              onClick={() => fixMutation.mutate()}
-              disabled={fixMutation.isPending}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-accent font-mono text-xs hover:bg-[var(--accent)]/20 disabled:opacity-50 transition-colors"
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              {fixMutation.isPending ? '처리 중...' : '$ auto-fix'}
-            </button>
+      {/* Actions — always visible, button state reflects approval status */}
+      <div className="card p-5">
+        <h2 className="font-mono text-xs font-semibold text-term flex items-center gap-1.5 mb-4">
+          <span className="text-accent">›</span> 검토 액션
+        </h2>
+
+        {!isPending && (
+          <div className="mb-3 px-3 py-2 rounded bg-canvas border border-term font-mono text-xs text-term-secondary flex items-center gap-2">
+            <span>
+              {report.approvalStatus === 'APPROVED' ? '✓ 승인됨' : '✗ 거절됨'}
+            </span>
+            <span className="text-[10px] opacity-60">— 재검토하려면 아래 버튼을 누르세요</span>
           </div>
-          {(approveMutation.isSuccess || rejectMutation.isSuccess) && (
-            <p className="font-mono text-[11px] text-green-400 mt-3">
-              ✓ 검토 결과가 GitHub PR 코멘트와 Slack으로 전달되었습니다.
-            </p>
-          )}
+        )}
+
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={() => approveMutation.mutate('')}
+            disabled={approveMutation.isPending || report.approvalStatus === 'APPROVED'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-green-500/40 bg-green-500/10 text-green-400 font-mono text-xs hover:bg-green-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <CheckCircle className="w-3.5 h-3.5" />
+            {approveMutation.isPending ? '처리 중...' : report.approvalStatus === 'APPROVED' ? '$ approved ✓' : '$ approve'}
+          </button>
+          <button
+            onClick={() => rejectMutation.mutate('변경 사항이 필요합니다.')}
+            disabled={rejectMutation.isPending || report.approvalStatus === 'REJECTED'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-red-500/40 bg-red-500/10 text-red-400 font-mono text-xs hover:bg-red-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+            {rejectMutation.isPending ? '처리 중...' : report.approvalStatus === 'REJECTED' ? '$ rejected ✗' : '$ reject'}
+          </button>
+          <button
+            onClick={() => fixMutation.mutate()}
+            disabled={fixMutation.isPending || report.approvalStatus === 'REJECTED'}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-[var(--accent)]/40 bg-[var(--accent)]/10 text-accent font-mono text-xs hover:bg-[var(--accent)]/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <Wrench className="w-3.5 h-3.5" />
+            {fixMutation.isPending ? '처리 중...' : '$ auto-fix'}
+          </button>
         </div>
-      )}
+        {(approveMutation.isSuccess || rejectMutation.isSuccess) && (
+          <p className="font-mono text-[11px] text-green-400 mt-3">
+            ✓ 검토 결과가 GitHub PR 코멘트와 Slack으로 전달되었습니다.
+          </p>
+        )}
+      </div>
 
       {/* Findings */}
       <div className="card">
