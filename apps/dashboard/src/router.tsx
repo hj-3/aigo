@@ -29,6 +29,13 @@ import { JobDetailPage } from './pages/JobDetailPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { TeamPage } from './pages/TeamPage';
 import { AcceptInvitePage } from './pages/AcceptInvitePage';
+import { IMTargetsPage } from './pages/im/TargetsPage';
+import { IMIncidentsPage } from './pages/im/IncidentsPage';
+import { IMRemediationPage } from './pages/im/RemediationPage';
+import { IMResourceDiagPage } from './pages/im/ResourceDiagPage';
+import { IMSecurityPage } from './pages/im/SecurityPage';
+import { IMMonitoringPage } from './pages/im/MonitoringPage';
+import { IMManagePage } from './pages/im/ManagePage';
 
 const rootRoute = createRootRoute({
   component: () => (
@@ -119,6 +126,15 @@ const jobDetailRoute = createRoute({ getParentRoute: () => protectedRoute, path:
 const settingsRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/settings', component: SettingsPage });
 const teamRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/team', component: TeamPage });
 
+// Incident Management routes
+const imTargetsRoute     = createRoute({ getParentRoute: () => protectedRoute, path: '/im/targets',     component: IMTargetsPage });
+const imIncidentsRoute   = createRoute({ getParentRoute: () => protectedRoute, path: '/im/incidents',   component: IMIncidentsPage });
+const imRemediationRoute = createRoute({ getParentRoute: () => protectedRoute, path: '/im/remediation', component: IMRemediationPage });
+const imDiagRoute        = createRoute({ getParentRoute: () => protectedRoute, path: '/im/diag',        component: IMResourceDiagPage });
+const imSecurityRoute    = createRoute({ getParentRoute: () => protectedRoute, path: '/im/security',    component: IMSecurityPage });
+const imMonitoringRoute  = createRoute({ getParentRoute: () => protectedRoute, path: '/im/monitoring',  component: IMMonitoringPage });
+const imManageRoute      = createRoute({ getParentRoute: () => protectedRoute, path: '/im/manage',      component: IMManagePage });
+
 const routeTree = rootRoute.addChildren([
   loginRoute,
   registerRoute,
@@ -135,6 +151,14 @@ const routeTree = rootRoute.addChildren([
     jobDetailRoute,
     settingsRoute,
     teamRoute,
+    // IM routes
+    imTargetsRoute,
+    imIncidentsRoute,
+    imRemediationRoute,
+    imDiagRoute,
+    imSecurityRoute,
+    imMonitoringRoute,
+    imManageRoute,
   ]),
 ]);
 

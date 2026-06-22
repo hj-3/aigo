@@ -13,6 +13,12 @@ import {
   Sun,
   Moon,
   Terminal,
+  ShieldAlert,
+  Target,
+  Wrench,
+  MessagesSquare,
+  Monitor,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/theme';
@@ -25,6 +31,16 @@ const navItems = [
   { to: '/repositories',label: '리포지토리', icon: GitBranch,       hint: 'repos' },
   { to: '/team',        label: '팀',         icon: Users,           hint: 'team' },
   { to: '/settings',    label: '설정',       icon: Settings,        hint: 'settings' },
+];
+
+const imNavItems = [
+  { to: '/im/targets',     label: '조사 대상 설정', icon: Target,           hint: 'targets' },
+  { to: '/im/incidents',   label: '인시던트 조사',  icon: ShieldAlert,      hint: 'incidents' },
+  { to: '/im/remediation', label: '조치 현황',      icon: Wrench,           hint: 'remediation' },
+  { to: '/im/diag',        label: '리소스 진단',    icon: MessagesSquare,   hint: 'diag' },
+  { to: '/im/security',    label: '보안 이벤트',    icon: ShieldAlert,      hint: 'security' },
+  { to: '/im/monitoring',  label: '모니터링',       icon: Monitor,          hint: 'monitoring' },
+  { to: '/im/manage',      label: '관리',           icon: SlidersHorizontal,hint: 'manage' },
 ];
 
 export function Layout({ children }: { children: ReactNode }) {
@@ -86,6 +102,40 @@ export function Layout({ children }: { children: ReactNode }) {
               </Link>
             );
           })}
+
+          {/* Incident Management section */}
+          <div className="mt-3 pt-3 border-t border-term/30">
+            <p className="px-2.5 mb-1.5 text-[9px] font-mono text-term-secondary/50 tracking-widest uppercase">
+              Incident Mgmt
+            </p>
+            {imNavItems.map(({ to, label, icon: Icon, hint }) => {
+              const isActive = currentPath.startsWith(to);
+              return (
+                <Link
+                  key={to}
+                  to={to}
+                  className={cn(
+                    'group flex items-center gap-2.5 px-2.5 py-1.5 rounded text-xs font-mono font-medium transition-colors',
+                    isActive
+                      ? 'bg-[var(--accent)]/10 text-accent'
+                      : 'text-term-secondary hover:text-term hover:bg-white/5 dark:hover:bg-white/5',
+                  )}
+                >
+                  {isActive
+                    ? <span className="text-accent font-bold w-3">›</span>
+                    : <span className="text-term-secondary/30 w-3 group-hover:text-term-secondary/60">·</span>
+                  }
+                  <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+                  <span>{label}</span>
+                  {!isActive && (
+                    <span className="ml-auto text-[9px] text-term-secondary/30 hidden group-hover:block font-normal">
+                      /{hint}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
+          </div>
         </nav>
 
         {/* Bottom actions */}

@@ -55,7 +55,8 @@ jobs:
             FILES=$(git diff --name-only HEAD~1 HEAD)
             echo "Changed files:"
             echo "$FILES"
-            grep -qE "^infra/"                                                                    <<< "$FILES" && echo "infra=true"        >> "$GITHUB_OUTPUT" || echo "infra=false"        >> "$GITHUB_OUTPUT"
+            PROD_INFRA=$(grep -E "^infra/" <<< "$FILES" | grep -vE "^infra/terraform/(envs/im|modules/im-)" || true)
+            [ -n "$PROD_INFRA" ] && echo "infra=true" >> "$GITHUB_OUTPUT" || echo "infra=false" >> "$GITHUB_OUTPUT"
             grep -qE "^(connectors|workers/lightweight|apps/dashboard-api|packages)/"            <<< "$FILES" && echo "api=true"          >> "$GITHUB_OUTPUT" || echo "api=false"          >> "$GITHUB_OUTPUT"
             grep -qE "^(agents/orchestrator|tools|libs/common|scripts/deploy-orchestrator\.sh)" <<< "$FILES" && echo "orchestrator=true" >> "$GITHUB_OUTPUT" || echo "orchestrator=false" >> "$GITHUB_OUTPUT"
             grep -qE "^(apps/dashboard|packages)/"                                               <<< "$FILES" && echo "dashboard=true"    >> "$GITHUB_OUTPUT" || echo "dashboard=false"    >> "$GITHUB_OUTPUT"

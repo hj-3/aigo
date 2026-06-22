@@ -1,0 +1,237 @@
+name: CD — Incident Management Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/im-api/**'
+      - 'agents/im-*/**'
+      - 'workers/im-*/**'
+      - 'infra/terraform/envs/im/**'
+      - 'infra/terraform/modules/im-*/**'
+      - 'scripts/deploy-im-lambda.sh'
+  workflow_dispatch:
+    inputs:
+      component:
+        description: 'Component to deploy (all | infra | api | agents)'
+        required: false
+        default: 'all'
+
+permissions:
+  id-token: write
+  contents: read
+
+# Shared concurrency group with cd-deploy.yml — prevents parallel Terraform runs.
+concurrency:
+  group: terraform-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-northeast-2
+  TF_VERSION: "1.10.3"
+  TF_STATE_BUCKET: aigo-tf-state
+
+jobs:
+  # ──────────────────────────────────────────────────────
+  # 0. Detect changed components
+  # ──────────────────────────────────────────────────────
+  detect-changes:
+    name: Detect Changed IM Components
+    runs-on: ubuntu-latest
+    outputs:
+      im_infra:  ${{ steps.diff.outputs.im_infra }}
+      im_api:    ${{ steps.diff.outputs.im_api }}
+      im_agents: ${{ steps.diff.outputs.im_agents }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Determine changed IM components
+        id: diff
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            COMP="${{ inputs.component }}"
+            echo "im_infra=$(  [[ "$COMP" == "all" || "$COMP" == "infra"  ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "im_api=$(    [[ "$COMP" == "all" || "$COMP" == "api"    ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+            echo "im_agents=$( [[ "$COMP" == "all" || "$COMP" == "agents" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          else
+            FILES=$(git diff --name-only HEAD~1 HEAD)
+            echo "Changed files:"
+            echo "$FILES"
+            grep -qE "^infra/terraform/(envs/im|modules/im-)" <<< "$FILES" && echo "im_infra=true"  >> "$GITHUB_OUTPUT" || echo "im_infra=false"  >> "$GITHUB_OUTPUT"
+            grep -qE "^apps/im-api/"                          <<< "$FILES" && echo "im_api=true"    >> "$GITHUB_OUTPUT" || echo "im_api=false"    >> "$GITHUB_OUTPUT"
+            grep -qE "^(agents/im-|workers/im-|scripts/deploy-im-lambda\.sh)" <<< "$FILES" && echo "im_agents=true" >> "$GITHUB_OUTPUT" || echo "im_agents=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # ──────────────────────────────────────────────────────
+  # 1. IM Infrastructure (Terraform apply)
+  # ──────────────────────────────────────────────────────
+  deploy-im-infra:
+    name: Deploy IM Infrastructure
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.im_infra == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Bootstrap — upload placeholder ZIPs if missing
+        run: |
+          FUNCTIONS=(
+            "im-api"
+            "im-normalize-event"
+            "im-webhook-receiver"
+            "im-security-event"
+            "im-poll-investigation"
+            "im-supervisor-agent"
+            "im-scope-agent"
+            "im-summary-agent"
+            "im-security-agent"
+            "im-chat-agent"
+            "im-action-executor"
+          )
+          # Minimal Lambda ZIP: a handler.py that returns success
+          mkdir -p /tmp/placeholder
+          cat > /tmp/placeholder/handler.py <<'EOF'
+          def lambda_handler(event, context):
+              return {"statusCode": 200, "body": "placeholder"}
+          EOF
+          cd /tmp/placeholder && zip placeholder.zip handler.py && cd -
+
+          for FN in "${FUNCTIONS[@]}"; do
+            KEY="lambda/${FN}/latest.zip"
+            if ! aws s3 ls "s3://aigo-artifacts/${KEY}" --region "${{ env.AWS_REGION }}" > /dev/null 2>&1; then
+              echo "Uploading placeholder for ${FN}..."
+              aws s3 cp /tmp/placeholder/placeholder.zip "s3://aigo-artifacts/${KEY}" --region "${{ env.AWS_REGION }}"
+            else
+              echo "✅ ${FN} already has a deployment package"
+            fi
+          done
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: true
+
+      - name: Terraform Init
+        working-directory: infra/terraform/envs/im
+        run: terraform init -reconfigure
+
+      - name: Clear stale lock (envs/im)
+        working-directory: infra/terraform/envs/im
+        run: |
+          LOCK_KEY="im/prod/terraform.tfstate.tflock"
+          if aws s3 cp "s3://${{ env.TF_STATE_BUCKET }}/${LOCK_KEY}" /tmp/im.lock 2>/dev/null; then
+            LOCK_ID=$(jq -r '.ID' /tmp/im.lock)
+            echo "Lock found: ${LOCK_ID} — force-unlocking"
+            terraform force-unlock -force "${LOCK_ID}"
+          else
+            echo "No lock file — proceeding"
+          fi
+
+      - name: Terraform Apply
+        working-directory: infra/terraform/envs/im
+        run: terraform apply -auto-approve -no-color -lock-timeout=5m
+        env:
+          TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+  # ──────────────────────────────────────────────────────
+  # 2. IM API (Node.js Lambda)
+  # ──────────────────────────────────────────────────────
+  deploy-im-api:
+    name: Deploy IM API Lambda
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-im-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-im-infra.result == 'success' || needs.deploy-im-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.im_api == 'true'
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+      - uses: pnpm/action-setup@v4
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm -r --filter="{packages/**}" build
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Package and deploy IM API Lambda
+        run: bash scripts/deploy-lambda.sh im-api aigo-im-api
+
+  # ──────────────────────────────────────────────────────
+  # 3. IM Agents & Workers (Python Lambdas — matrix)
+  # ──────────────────────────────────────────────────────
+  deploy-im-agents:
+    name: Deploy IM Lambda (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    needs: [detect-changes, deploy-im-infra]
+    if: |
+      always() && !cancelled() &&
+      (needs.deploy-im-infra.result == 'success' || needs.deploy-im-infra.result == 'skipped') &&
+      needs.detect-changes.outputs.im_agents == 'true'
+    environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: im-supervisor-agent
+            src: agents/im-supervisor
+          - name: im-scope-agent
+            src: agents/im-scope
+          - name: im-summary-agent
+            src: agents/im-summary
+          - name: im-security-agent
+            src: agents/im-security
+          - name: im-poll-investigation
+            src: workers/im-poll-investigation
+          - name: im-normalize-event
+            src: workers/im-normalize-event
+          - name: im-webhook-receiver
+            src: workers/im-webhook-receiver
+          - name: im-security-event
+            src: workers/im-security-event
+          - name: im-chat-agent
+            src: agents/im-chat
+          - name: im-action-executor
+            src: workers/im-action-executor
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and deploy ${{ matrix.name }}
+        run: bash scripts/deploy-im-lambda.sh ${{ matrix.src }} aigo-${{ matrix.name }}
+        env:
+          PROJECT: aigo
+          AWS_REGION: ${{ env.AWS_REGION }}

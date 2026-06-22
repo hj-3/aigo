@@ -1,0 +1,197 @@
+name: CI — Incident Management
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/im-api/**'
+      - 'agents/im-*/**'
+      - 'workers/im-*/**'
+      - 'infra/terraform/envs/im/**'
+      - 'infra/terraform/modules/im-*/**'
+      - '.github/workflows/ci-im.yml'
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  TF_VERSION: "1.10.3"
+  AWS_REGION: ap-northeast-2
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # 1. TypeScript — im-api
+  # ─────────────────────────────────────────────────────────────
+  build-im-api:
+    name: TypeCheck + Bundle (im-api)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: ${{ runner.os }}-pnpm-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build shared packages
+        run: pnpm -r --filter="{packages/**}" build
+
+      - name: Type check im-api
+        run: pnpm -F "@aigo/im-api" type-check
+
+      - name: Bundle im-api (verify no bundling errors)
+        run: pnpm -F "@aigo/im-api" bundle
+
+  # ─────────────────────────────────────────────────────────────
+  # 2. Python — IM agents & workers
+  # ─────────────────────────────────────────────────────────────
+  lint-im-agents:
+    name: Ruff + Pyright (IM agents/workers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "0.5.0"
+
+      - name: Install dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Run Ruff lint
+        run: uv run ruff check agents/im-supervisor/ agents/im-scope/ agents/im-summary/ agents/im-security/ workers/im-normalize-event/ workers/im-webhook-receiver/ workers/im-security-event/ workers/im-action-executor/
+
+      - name: Run Ruff format check
+        run: uv run ruff format --check agents/im-supervisor/ agents/im-scope/ agents/im-summary/ agents/im-security/ workers/im-normalize-event/ workers/im-webhook-receiver/ workers/im-security-event/ workers/im-action-executor/
+
+      - name: Run Pyright
+        run: uv run pyright agents/im-supervisor/ agents/im-scope/ agents/im-summary/ agents/im-security/ workers/im-normalize-event/ workers/im-webhook-receiver/ workers/im-security-event/ workers/im-action-executor/
+
+  test-im-agents:
+    name: Pytest (IM agents/workers)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: uv sync --all-packages --group dev
+
+      - name: Run tests
+        run: uv run pytest agents/im-supervisor/ agents/im-scope/ agents/im-summary/ agents/im-security/ workers/im-normalize-event/ workers/im-webhook-receiver/ workers/im-security-event/ workers/im-action-executor/ -v --tb=short || [ $? -eq 5 ]
+        env:
+          AWS_DEFAULT_REGION: ap-northeast-2
+          AWS_ACCESS_KEY_ID: test
+          AWS_SECRET_ACCESS_KEY: test
+
+  # ─────────────────────────────────────────────────────────────
+  # 3. Terraform — infra/terraform/envs/im
+  # ─────────────────────────────────────────────────────────────
+  validate-im-infra:
+    name: Terraform Validate (envs/im)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Format Check
+        working-directory: infra/terraform
+        run: terraform fmt -check -recursive
+
+      - name: Terraform Init (envs/im)
+        working-directory: infra/terraform/envs/im
+        run: terraform init -backend=false
+
+      - name: Terraform Validate (envs/im)
+        working-directory: infra/terraform/envs/im
+        run: terraform validate
+
+  plan-im-infra:
+    name: Terraform Plan (envs/im)
+    runs-on: ubuntu-latest
+    needs: validate-im-infra
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Terraform Init
+        working-directory: infra/terraform/envs/im
+        run: terraform init
+
+      - name: Terraform Plan
+        id: plan
+        working-directory: infra/terraform/envs/im
+        run: terraform plan -no-color -out=tfplan
+        env:
+          TF_VAR_aws_account_id: ${{ secrets.AWS_ACCOUNT_ID }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+
+      - name: Comment Plan on PR
+        uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            const output = `### IM Terraform Plan 📋
+            \`\`\`
+            ${{ steps.plan.outputs.stdout }}
+            \`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });

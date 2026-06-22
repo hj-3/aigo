@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - 'agents/**'
+      - '!agents/im-*/**'
       - 'tools/**'
       - 'libs/**'
       - 'workers/heavy/**'

@@ -21,6 +21,9 @@ elif [[ "$PACKAGE_NAME" == "worker-notification" ]]; then
 elif [[ "$PACKAGE_NAME" == "dashboard-api" ]]; then
   BUNDLE_PATH="apps/dashboard-api/dist/index.js"
   PKG_FILTER="@aigo/dashboard-api"
+elif [[ "$PACKAGE_NAME" == "im-api" ]]; then
+  BUNDLE_PATH="apps/im-api/dist/index.js"
+  PKG_FILTER="@aigo/im-api"
 else
   echo "Unknown package: $PACKAGE_NAME" >&2
   exit 1

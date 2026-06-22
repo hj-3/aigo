@@ -6,6 +6,8 @@ on:
     branches: [main]
     paths:
       - 'infra/**'
+      - '!infra/terraform/envs/im/**'
+      - '!infra/terraform/modules/im-*/**'
       - '.github/workflows/ci-infra.yml'
 
 permissions:
