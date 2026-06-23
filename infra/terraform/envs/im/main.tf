@@ -1214,6 +1214,14 @@ resource "aws_apigatewayv2_route" "catch_all_auth" {
   authorizer_id      = aws_apigatewayv2_authorizer.cognito.id
 }
 
+# OPTIONS preflight — no auth (browsers send this before every CORS request)
+resource "aws_apigatewayv2_route" "options" {
+  api_id             = aws_apigatewayv2_api.im.id
+  route_key          = "OPTIONS /{proxy+}"
+  target             = "integrations/${aws_apigatewayv2_integration.im_api.id}"
+  authorization_type = "NONE"
+}
+
 # Webhook route — no auth (uses API key in header instead)
 resource "aws_apigatewayv2_route" "webhook" {
   api_id             = aws_apigatewayv2_api.im.id
