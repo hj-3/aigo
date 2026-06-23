@@ -635,6 +635,8 @@ resource "aws_iam_policy" "github_actions_tf_platform" {
       { Sid = "LogsFull", Effect = "Allow", Action = ["logs:*"], Resource = "*" },
       { Sid = "CognitoFull", Effect = "Allow", Action = ["cognito-idp:*"], Resource = "*" },
       { Sid = "APIGatewayFull", Effect = "Allow", Action = ["apigateway:*"], Resource = "*" },
+      { Sid = "APIGatewayV2Full", Effect = "Allow", Action = ["apigatewayv2:*"], Resource = "*" },
+      { Sid = "StepFunctionsFull", Effect = "Allow", Action = ["states:*"], Resource = "*" },
       { Sid = "CloudFrontFull", Effect = "Allow", Action = ["cloudfront:*"], Resource = "*" },
       { Sid = "WAFFull", Effect = "Allow", Action = ["wafv2:*"], Resource = "*" },
       { Sid = "GuardDutyFull", Effect = "Allow", Action = ["guardduty:*"], Resource = "*" },
