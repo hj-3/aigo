@@ -33,24 +33,24 @@ IM_FUNCTIONS=(
   aigo-im-action-executor
 )
 
-# ── DynamoDB 테이블 + 필수 GSI ─────────────────────────────────────────────
+# ── DynamoDB 테이블 + 필수 GSI (실제 생성된 PascalCase 이름 기준) ──────────
 declare -A DDB_GSIS
-DDB_GSIS["aigo-im-incidents"]="GSI1-orgId-status-index GSI2-account-time-index"
-DDB_GSIS["aigo-im-investigation"]=""
-DDB_GSIS["aigo-im-recovery-actions"]="GSI1-orgId-incident-index"
-DDB_GSIS["aigo-im-settings"]=""
-DDB_GSIS["aigo-im-accounts"]=""
-DDB_GSIS["aigo-im-external-integrations"]="GSI1-integrationId-index"
-DDB_GSIS["aigo-im-targets"]="GSI1-account-alarmName-index"
+DDB_GSIS["aigo-im-Incidents"]="GSI1-orgId-status-index GSI2-account-detectedAt-index"
+DDB_GSIS["aigo-im-InvestigationResults"]=""
+DDB_GSIS["aigo-im-RecoveryActions"]="GSI1-orgId-incident-index"
+DDB_GSIS["aigo-im-RemediationSettings"]=""
+DDB_GSIS["aigo-im-LinkedAccounts"]=""
+DDB_GSIS["aigo-im-ExternalIntegrations"]="GSI1-integrationId-index"
+DDB_GSIS["aigo-im-InvestigationTargets"]="GSI1-account-alarmName-index"
 
-# ── 필수 Lambda 환경변수 ──────────────────────────────────────────────────────
+# ── 필수 Lambda 환경변수 (실제 env var 키 기준) ───────────────────────────────
 declare -A LAMBDA_ENVS
-LAMBDA_ENVS["aigo-im-api"]="IM_INCIDENTS_TABLE IM_INVESTIGATION_TABLE IM_REMEDIATIONS_TABLE IM_SETTINGS_TABLE IM_ACCOUNTS_TABLE IM_INTEGRATIONS_TABLE IM_TARGETS_TABLE IM_SFN_ARN IM_REPORTS_BUCKET"
+LAMBDA_ENVS["aigo-im-api"]="IM_INCIDENTS_TABLE IM_INVESTIGATION_TABLE IM_RECOVERY_ACTIONS_TABLE IM_SETTINGS_TABLE IM_LINKED_ACCOUNTS_TABLE IM_INTEGRATIONS_TABLE IM_TARGETS_TABLE IM_SFN_ARN IM_REPORTS_BUCKET"
 LAMBDA_ENVS["aigo-im-normalize-event"]="IM_INCIDENTS_TABLE IM_TARGETS_TABLE IM_SFN_ARN"
 LAMBDA_ENVS["aigo-im-scope-agent"]="IM_INVESTIGATION_TABLE"
 LAMBDA_ENVS["aigo-im-summary-agent"]="IM_INCIDENTS_TABLE IM_REPORTS_BUCKET IM_SETTINGS_TABLE"
-LAMBDA_ENVS["aigo-im-security-agent"]="IM_SECURITY_TABLE"
-LAMBDA_ENVS["aigo-im-action-executor"]="IM_REMEDIATIONS_TABLE IM_SETTINGS_TABLE"
+LAMBDA_ENVS["aigo-im-security-agent"]="IM_SECURITY_EVENTS_TABLE"
+LAMBDA_ENVS["aigo-im-action-executor"]="IM_RECOVERY_ACTIONS_TABLE IM_SETTINGS_TABLE"
 LAMBDA_ENVS["aigo-im-supervisor-agent"]="IM_INCIDENTS_TABLE IM_INVESTIGATION_TABLE"
 LAMBDA_ENVS["aigo-im-poll-investigation"]="IM_INCIDENTS_TABLE IM_INVESTIGATION_TABLE"
 
@@ -159,7 +159,6 @@ SFN_ARN=$(aws stepfunctions list-state-machines \
 
 if [[ "$SFN_ARN" != "None" && "$SFN_ARN" != "" ]]; then
   ok "State machine found: $SFN_ARN"
-  # Validate definition parses (list executions)
   exec_count=$(aws stepfunctions list-executions \
     --state-machine-arn "$SFN_ARN" \
     --region "$AWS_REGION" \
@@ -188,24 +187,17 @@ if [[ "$BUS_ARN" != "NOT_FOUND" ]]; then
     --output text 2>/dev/null || echo "0")
   info "Rules on IM bus: $rule_count"
 
-  # Check normalize_event is a target
-  normalize_arn=$(aws lambda get-function-configuration \
-    --function-name aigo-im-normalize-event \
+  # normalize_event:live가 cloudwatch-alarm 규칙의 타겟인지 확인
+  target_check=$(aws events list-targets-by-rule \
+    --rule aigo-im-rule-cloudwatch-alarm \
+    --event-bus-name aigo-im-event-bus \
     --region "$AWS_REGION" \
-    --query 'FunctionArn' \
+    --query "Targets[?contains(Arn, 'normalize-event')]" \
     --output text 2>/dev/null || echo "")
-  if [[ -n "$normalize_arn" ]]; then
-    target_check=$(aws events list-targets-by-rule \
-      --rule aigo-im-cloudwatch-alarm-rule \
-      --event-bus-name aigo-im-event-bus \
-      --region "$AWS_REGION" \
-      --query "Targets[?Arn=='$normalize_arn']" \
-      --output text 2>/dev/null || echo "")
-    if [[ -n "$target_check" ]]; then
-      ok "normalize_event is target of cloudwatch-alarm-rule"
-    else
-      fail "normalize_event NOT wired to cloudwatch-alarm-rule"
-    fi
+  if [[ -n "$target_check" ]]; then
+    ok "normalize_event is target of aigo-im-rule-cloudwatch-alarm"
+  else
+    fail "normalize_event NOT wired to aigo-im-rule-cloudwatch-alarm"
   fi
 else
   fail "Event bus: aigo-im-event-bus NOT FOUND"
@@ -225,14 +217,27 @@ if [[ "$API_ID" != "None" && "$API_ID" != "" ]]; then
     --query 'ApiEndpoint' \
     --output text 2>/dev/null || echo "")
   ok "API Gateway: $ENDPOINT"
+
+  # 커스텀 도메인 확인
+  domain_status=$(aws apigatewayv2 get-domain-name \
+    --domain-name "im-api.seolphung.com" \
+    --region "$AWS_REGION" \
+    --query "DomainNameConfigurations[0].DomainNameStatus" \
+    --output text 2>/dev/null || echo "NOT_FOUND")
+  if [[ "$domain_status" == "AVAILABLE" ]]; then
+    ok "Custom domain: im-api.seolphung.com — AVAILABLE"
+  else
+    fail "Custom domain: im-api.seolphung.com — $domain_status"
+  fi
 else
   fail "IM HTTP API NOT FOUND"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
-section "8. Lambda Permissions (EventBridge → normalize_event)"
+section "8. Lambda Permissions (EventBridge → normalize_event:live)"
 perm_check=$(aws lambda get-policy \
   --function-name aigo-im-normalize-event \
+  --qualifier live \
   --region "$AWS_REGION" \
   --query 'Policy' \
   --output text 2>/dev/null | python3 -c "
@@ -244,9 +249,9 @@ print('FOUND' if eb_stmts else 'MISSING')
 " 2>/dev/null || echo "MISSING")
 
 if [[ "$perm_check" == "FOUND" ]]; then
-  ok "EventBridge → normalize_event permission exists"
+  ok "EventBridge → normalize_event:live permission exists"
 else
-  fail "EventBridge → normalize_event permission MISSING"
+  fail "EventBridge → normalize_event:live permission MISSING"
 fi
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -254,8 +259,7 @@ section "9. S3 Reports Bucket"
 ACCOUNT_ID=$(aws sts get-caller-identity --query 'Account' --output text)
 REPORTS_BUCKET="aigo-im-reports-${ACCOUNT_ID}"
 
-bucket_exists=$(aws s3api head-bucket --bucket "$REPORTS_BUCKET" 2>/dev/null && echo "EXISTS" || echo "NOT_FOUND")
-if [[ "$bucket_exists" == "EXISTS" ]]; then
+if aws s3api head-bucket --bucket "$REPORTS_BUCKET" >/dev/null 2>&1; then
   ok "Reports bucket: $REPORTS_BUCKET"
 else
   fail "Reports bucket: $REPORTS_BUCKET NOT FOUND"

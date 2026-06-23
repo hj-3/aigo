@@ -104,7 +104,7 @@ function ActionGroup({ incidentId, incidentTitle, actions }: {
                       실행
                     </button>
                   )}
-                  {action.status === 'HIGH' && (
+                  {action.riskLevel === 'HIGH' && (
                     <AlertTriangle className="w-3.5 h-3.5 text-red-400 ml-auto" />
                   )}
                 </td>

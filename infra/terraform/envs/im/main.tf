@@ -1246,7 +1246,6 @@ resource "aws_apigatewayv2_stage" "prod" {
 resource "aws_cloudwatch_log_group" "api_gw" {
   name              = "/aws/apigateway/aigo-im-api"
   retention_in_days = 30
-  kms_key_id        = data.aws_kms_alias.lambda.target_key_arn
   tags              = local.common_tags
 }
 
