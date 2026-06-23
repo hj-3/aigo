@@ -7,13 +7,12 @@ import { ChevronRight, FileText, Wrench, X } from 'lucide-react';
 interface Incident {
   readonly incidentId: string;
   readonly title: string;
-  readonly accountId: string;
-  readonly service: string;
-  readonly alarmName: string;
+  readonly linkedAccountId?: string;
+  readonly affectedServices: string[];
   readonly severity: string;
   readonly status: string;
-  readonly rootCause?: string;
-  readonly trigger?: string;
+  readonly description?: string;
+  readonly source: string;
   readonly createdAt: string;
 }
 
@@ -115,11 +114,11 @@ function IncidentDetailDrawer({
           {/* Meta */}
           <div className="grid grid-cols-2 gap-3">
             {[
-              { label: '계정', value: incident.accountId },
-              { label: '서비스', value: incident.service },
-              { label: '알람명', value: incident.alarmName },
+              { label: '계정', value: incident.linkedAccountId ?? '-' },
+              { label: '영향 서비스', value: incident.affectedServices?.join(', ') ?? '-' },
               { label: '심각도', value: incident.severity },
               { label: '상태', value: incident.status },
+              { label: '발생 원인', value: incident.source },
               { label: '발생 시각', value: new Date(incident.createdAt).toLocaleString('ko-KR') },
             ].map(({ label, value }) => (
               <div key={label} className="bg-canvas rounded p-2.5">
@@ -235,7 +234,7 @@ export function IMIncidentsPage() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-term bg-canvas/50">
-              {['계정', '발생 시각', '서비스', '알람명', '근본 원인', '상태', ''].map((h) => (
+              {['심각도', '발생 시각', '제목', '영향 서비스', '설명', '상태', ''].map((h) => (
                 <th key={h} className="text-left font-mono text-[10px] text-term-secondary uppercase tracking-wider px-4 py-2.5">
                   {h}
                 </th>
@@ -256,14 +255,24 @@ export function IMIncidentsPage() {
                 className="border-b border-term/30 hover:bg-white/3 transition-colors cursor-pointer"
                 onClick={() => setSelectedIncident(inc)}
               >
-                <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary">{inc.accountId}</td>
+                <td className="px-4 py-2.5">
+                  <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded',
+                    inc.severity === 'CRITICAL' ? 'bg-red-500/10 text-red-400' :
+                    inc.severity === 'HIGH' ? 'bg-orange-500/10 text-orange-400' :
+                    inc.severity === 'MEDIUM' ? 'bg-yellow-500/10 text-yellow-400' :
+                    'bg-gray-500/10 text-gray-400')}>
+                    {inc.severity}
+                  </span>
+                </td>
                 <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary whitespace-nowrap">
                   {new Date(inc.createdAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
                 </td>
-                <td className="px-4 py-2.5 font-mono text-xs text-accent">{inc.service}</td>
-                <td className="px-4 py-2.5 font-mono text-xs text-term max-w-[160px] truncate">{inc.alarmName}</td>
+                <td className="px-4 py-2.5 font-mono text-xs text-accent max-w-[180px] truncate">{inc.title}</td>
+                <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary max-w-[140px] truncate">
+                  {inc.affectedServices?.join(', ') ?? '—'}
+                </td>
                 <td className="px-4 py-2.5 font-mono text-xs text-term-secondary max-w-[200px] truncate">
-                  {inc.rootCause ?? (inc.status === 'INVESTIGATING' ? '조사 중...' : '—')}
+                  {inc.description ?? (inc.status === 'INVESTIGATING' ? '조사 중...' : '—')}
                 </td>
                 <td className="px-4 py-2.5">
                   <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', STATUS_COLORS[inc.status] ?? 'bg-gray-500/10 text-gray-400')}>

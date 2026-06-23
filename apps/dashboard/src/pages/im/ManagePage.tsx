@@ -10,15 +10,15 @@ type Tab = typeof TABS[number];
 // ─── Accounts Tab ─────────────────────────────────────────────────
 interface LinkedAccount {
   readonly accountId: string;
-  readonly alias: string;
+  readonly accountAlias: string;
   readonly crossAccountRoleArn: string;
-  readonly isActive: boolean;
-  readonly addedAt: string;
+  readonly status: string;
+  readonly createdAt: string;
 }
 
 function AddAccountModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ accountId: '', alias: '', crossAccountRoleArn: '' });
+  const [form, setForm] = useState({ accountId: '', accountAlias: '', crossAccountRoleArn: '', region: 'ap-northeast-2' });
 
   const create = useMutation({
     mutationFn: () => imApi.post('/accounts', form),
@@ -27,7 +27,7 @@ function AddAccountModal({ onClose }: { onClose: () => void }) {
 
   const fields = [
     { key: 'accountId', label: 'AWS Account ID', placeholder: '123456789012' },
-    { key: 'alias', label: '계정 별칭', placeholder: 'prod-account' },
+    { key: 'accountAlias', label: '계정 별칭', placeholder: 'prod-account' },
     { key: 'crossAccountRoleArn', label: 'Cross-Account Role ARN', placeholder: 'arn:aws:iam::123456789012:role/aigo-im-cross-account' },
   ] as const;
 
@@ -116,15 +116,15 @@ function AccountsTab() {
               {(accounts ?? []).map((acc) => (
                 <tr key={acc.accountId} className="border-b border-term/30 hover:bg-white/3 transition-colors">
                   <td className="px-4 py-2.5 font-mono text-xs text-accent">{acc.accountId}</td>
-                  <td className="px-4 py-2.5 font-mono text-xs text-term">{acc.alias}</td>
+                  <td className="px-4 py-2.5 font-mono text-xs text-term">{acc.accountAlias}</td>
                   <td className="px-4 py-2.5 font-mono text-[10px] text-term-secondary max-w-[240px] truncate">{acc.crossAccountRoleArn}</td>
                   <td className="px-4 py-2.5">
-                    <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', acc.isActive ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
-                      {acc.isActive ? 'ACTIVE' : 'INACTIVE'}
+                    <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', acc.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
+                      {acc.status}
                     </span>
                   </td>
                   <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary">
-                    {new Date(acc.addedAt).toLocaleDateString('ko-KR')}
+                    {new Date(acc.createdAt).toLocaleDateString('ko-KR')}
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <button onClick={() => deleteAccount.mutate(acc.accountId)} className="text-term-secondary/40 hover:text-red-400 transition-colors">

@@ -7,19 +7,19 @@ import { Plus, Trash2, ExternalLink } from 'lucide-react';
 interface AwsTarget {
   readonly targetId: string;
   readonly accountId: string;
-  readonly service: string;
+  readonly serviceName: string;
   readonly alarmName: string;
   readonly region: string;
-  readonly isActive: boolean;
+  readonly enabled: boolean;
   readonly createdAt: string;
 }
 
 interface Integration {
   readonly integrationId: string;
-  readonly toolType: 'ZABBIX' | 'PROMETHEUS' | 'GRAFANA' | 'WEBHOOK';
+  readonly type: 'SLACK' | 'PAGERDUTY' | 'OPSGENIE' | 'WEBHOOK';
   readonly name: string;
-  readonly webhookUrl: string;
-  readonly isActive: boolean;
+  readonly webhookToken: string | null;
+  readonly enabled: boolean;
   readonly createdAt: string;
 }
 
@@ -28,7 +28,7 @@ type Tab = typeof TABS[number];
 
 function AlarmRegisterModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ accountId: '', service: '', alarmName: '', region: 'ap-northeast-2' });
+  const [form, setForm] = useState({ accountId: '', serviceName: '', alarmName: '', region: 'ap-northeast-2' });
 
   const create = useMutation({
     mutationFn: () => imApi.post('/targets', form),
@@ -43,7 +43,7 @@ function AlarmRegisterModal({ onClose }: { onClose: () => void }) {
         </p>
         {[
           { key: 'accountId', label: 'AWS Account ID', placeholder: '123456789012' },
-          { key: 'service', label: 'AWS 서비스', placeholder: 'EC2, RDS, ECS, Lambda ...' },
+          { key: 'serviceName', label: 'AWS 서비스', placeholder: 'EC2, RDS, ECS, Lambda ...' },
           { key: 'alarmName', label: 'CloudWatch 알람명', placeholder: 'prod-api-cpu-high' },
           { key: 'region', label: '리전', placeholder: 'ap-northeast-2' },
         ].map(({ key, label, placeholder }) => (
@@ -76,10 +76,10 @@ function AlarmRegisterModal({ onClose }: { onClose: () => void }) {
 
 function IntegrationModal({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
-  const [form, setForm] = useState({ toolType: 'ZABBIX', name: '' });
+  const [form, setForm] = useState({ type: 'WEBHOOK' as 'SLACK' | 'PAGERDUTY' | 'OPSGENIE' | 'WEBHOOK', name: '' });
 
   const create = useMutation({
-    mutationFn: () => imApi.post<{ webhookUrl: string }>('/integrations', form),
+    mutationFn: () => imApi.post<{ webhookToken: string }>('/integrations', { ...form, config: {} }),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['im-integrations'] }); onClose(); },
   });
 
@@ -93,10 +93,10 @@ function IntegrationModal({ onClose }: { onClose: () => void }) {
           <label className="block text-[10px] text-term-secondary mb-1">도구 유형</label>
           <select
             className="w-full bg-canvas border border-term rounded px-2.5 py-1.5 text-xs text-term font-mono focus:outline-none focus:border-accent"
-            value={form.toolType}
-            onChange={(e) => setForm((f) => ({ ...f, toolType: e.target.value }))}
+            value={form.type}
+            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as typeof form.type }))}
           >
-            {['ZABBIX', 'PROMETHEUS', 'GRAFANA', 'WEBHOOK'].map((t) => (
+            {(['SLACK', 'PAGERDUTY', 'OPSGENIE', 'WEBHOOK'] as const).map((t) => (
               <option key={t} value={t}>{t}</option>
             ))}
           </select>
@@ -219,12 +219,12 @@ export function IMTargetsPage() {
                 {(targets ?? []).map((t) => (
                   <tr key={t.targetId} className="border-b border-term/30 hover:bg-white/3 transition-colors">
                     <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary">{t.accountId}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs text-accent">{t.service}</td>
+                    <td className="px-4 py-2.5 font-mono text-xs text-accent">{t.serviceName}</td>
                     <td className="px-4 py-2.5 font-mono text-xs text-term">{t.alarmName}</td>
                     <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary">{t.region}</td>
                     <td className="px-4 py-2.5">
-                      <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', t.isActive ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
-                        {t.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', t.enabled ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
+                        {t.enabled ? 'ACTIVE' : 'INACTIVE'}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right">
@@ -252,7 +252,7 @@ export function IMTargetsPage() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-term bg-canvas/50">
-                  {['이름', '유형', 'Webhook URL', '상태', ''].map((h) => (
+                  {['이름', '유형', 'Webhook Token', '상태', ''].map((h) => (
                     <th key={h} className="text-left font-mono text-[10px] text-term-secondary uppercase tracking-wider px-4 py-2.5">
                       {h}
                     </th>
@@ -263,7 +263,7 @@ export function IMTargetsPage() {
                 {(integrations ?? []).length === 0 && (
                   <tr>
                     <td colSpan={5} className="px-4 py-8 text-center font-mono text-xs text-term-secondary">
-                      연동된 외부 도구가 없습니다. 연동 추가 버튼으로 Webhook URL을 발급하세요.
+                      연동된 외부 도구가 없습니다. 연동 추가 버튼으로 Webhook Token을 발급하세요.
                     </td>
                   </tr>
                 )}
@@ -272,22 +272,22 @@ export function IMTargetsPage() {
                     <td className="px-4 py-2.5 font-mono text-xs text-term">{i.name}</td>
                     <td className="px-4 py-2.5">
                       <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent">
-                        {i.toolType}
+                        {i.type}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 font-mono text-[11px] text-term-secondary max-w-xs truncate">
-                      <span className="font-mono text-[10px]">{i.webhookUrl}</span>
+                      <span className="font-mono text-[10px]">{i.webhookToken ?? '—'}</span>
                     </td>
                     <td className="px-4 py-2.5">
-                      <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', i.isActive ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
-                        {i.isActive ? 'ACTIVE' : 'INACTIVE'}
+                      <span className={cn('font-mono text-[10px] px-1.5 py-0.5 rounded', i.enabled ? 'bg-green-500/10 text-green-400' : 'bg-gray-500/10 text-gray-400')}>
+                        {i.enabled ? 'ACTIVE' : 'INACTIVE'}
                       </span>
                     </td>
                     <td className="px-4 py-2.5 text-right flex items-center gap-2 justify-end">
                       <button
-                        onClick={() => navigator.clipboard.writeText(i.webhookUrl)}
+                        onClick={() => i.webhookToken && navigator.clipboard.writeText(i.webhookToken)}
                         className="text-term-secondary/40 hover:text-accent transition-colors"
-                        title="URL 복사"
+                        title="Token 복사"
                       >
                         <ExternalLink className="w-3.5 h-3.5" />
                       </button>
